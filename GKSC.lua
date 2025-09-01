@@ -1,101 +1,184 @@
--- // Gunung Kalimantan Utility GUI
--- // Compatible: Delta (Mobile), Xeno (PC), other executors
--- // Features: Player TP, Checkpoint TP, Fly, Noclip, Walkspeed Slider, Minimize/Close
+-- 🐄 CowHub | Gunung Kalimantan Utility Hub
+-- Works with Delta (Mobile) & Xeno (PC)
 
--- CONFIG
-local DEFAULT_SPEED = 16
-local LOGO_ID = "rbxassetid://96561295484774" -- Replace with your own logo asset id
-
--- Services
+-- // SERVICES
 local Players = game:GetService("Players")
-local UIS = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local Humanoid = Character:WaitForChild("Humanoid")
 
--- ScreenGui
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "GK_GUI"
-ScreenGui.Parent = game.CoreGui
-ScreenGui.ResetOnSpawn = false
+-- // SETTINGS
+local DEFAULT_SPEED = 16
+local LOGO_ID = "rbxassetid://YOUR_LOGO_ID" -- put your logo asset id here
 
--- Main Frame
-local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 350, 0, 400)
+-- // DRAG FUNCTION
+local function makeDraggable(frame)
+    local dragToggle, dragStart, startPos
+    frame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragToggle = true
+            dragStart = input.Position
+            startPos = frame.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragToggle = false
+                end
+            end)
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragToggle and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X,
+                                       startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+end
+
+-- // MAIN GUI
+local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
+ScreenGui.Name = "CowHubUI"
+
+-- TopBar Frame
+local MainFrame = Instance.new("Frame", ScreenGui)
+MainFrame.Size = UDim2.new(0, 400, 0, 300)
 MainFrame.Position = UDim2.new(0.3, 0, 0.3, 0)
-MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 MainFrame.Active = true
-MainFrame.Draggable = true
-MainFrame.Parent = ScreenGui
+MainFrame.Draggable = false
+makeDraggable(MainFrame)
 
--- Top Bar
-local TopBar = Instance.new("Frame")
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 8)
+
+-- Title Bar
+local TopBar = Instance.new("Frame", MainFrame)
 TopBar.Size = UDim2.new(1, 0, 0, 30)
-TopBar.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-TopBar.Parent = MainFrame
+TopBar.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+Instance.new("UICorner", TopBar).CornerRadius = UDim.new(0, 8)
 
-local Title = Instance.new("TextLabel")
-Title.Text = "Gunung Kalimantan Utility"
+local Title = Instance.new("TextLabel", TopBar)
 Title.Size = UDim2.new(1, -60, 1, 0)
 Title.Position = UDim2.new(0, 10, 0, 0)
+Title.Text = "🐄 CowHub | Gunung Kalimantan"
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.BackgroundTransparency = 1
-Title.Font = Enum.Font.SourceSansBold
-Title.TextSize = 16
 Title.TextXAlignment = Enum.TextXAlignment.Left
-Title.Parent = TopBar
+Title.BackgroundTransparency = 1
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 14
 
--- Minimize Button
-local MinBtn = Instance.new("TextButton")
-MinBtn.Size = UDim2.new(0, 25, 0, 25)
-MinBtn.Position = UDim2.new(1, -60, 0, 2)
-MinBtn.Text = "-"
-MinBtn.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
-MinBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-MinBtn.Parent = TopBar
+-- Minimize & Close
+local MinimizeBtn = Instance.new("TextButton", TopBar)
+MinimizeBtn.Text = "-"
+MinimizeBtn.Size = UDim2.new(0, 25, 0, 25)
+MinimizeBtn.Position = UDim2.new(1, -55, 0.5, -12)
+MinimizeBtn.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
 
--- Close Button
-local CloseBtn = Instance.new("TextButton")
-CloseBtn.Size = UDim2.new(0, 25, 0, 25)
-CloseBtn.Position = UDim2.new(1, -30, 0, 2)
+local CloseBtn = Instance.new("TextButton", TopBar)
 CloseBtn.Text = "X"
-CloseBtn.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
-CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-CloseBtn.Parent = TopBar
+CloseBtn.Size = UDim2.new(0, 25, 0, 25)
+CloseBtn.Position = UDim2.new(1, -30, 0.5, -12)
+CloseBtn.BackgroundColor3 = Color3.fromRGB(100, 50, 50)
 
--- Minimized Logo
-local MinLogo = Instance.new("ImageButton")
-MinLogo.Size = UDim2.new(0, 50, 0, 50)
-MinLogo.Position = UDim2.new(0.05, 0, 0.5, 0)
-MinLogo.Image = LOGO_ID
-MinLogo.Visible = false
-MinLogo.BackgroundTransparency = 1
-MinLogo.Parent = ScreenGui
+-- Tab Buttons
+local TabFrame = Instance.new("Frame", MainFrame)
+TabFrame.Size = UDim2.new(0, 100, 1, -30)
+TabFrame.Position = UDim2.new(0, 0, 0, 30)
+TabFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
 
--- Make Logo Draggable
-local dragging = false
-local dragInput, dragStart, startPos
-MinLogo.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true
-        dragStart = input.Position
-        startPos = MinLogo.Position
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-            end
+local ContentFrame = Instance.new("Frame", MainFrame)
+ContentFrame.Size = UDim2.new(1, -100, 1, -30)
+ContentFrame.Position = UDim2.new(0, 100, 0, 30)
+ContentFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+
+-- Tabs: Players / Checkpoints / Movement
+local tabs = {}
+local function createTab(name)
+    local btn = Instance.new("TextButton", TabFrame)
+    btn.Size = UDim2.new(1, 0, 0, 40)
+    btn.Text = name
+    btn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+
+    local frame = Instance.new("ScrollingFrame", ContentFrame)
+    frame.Size = UDim2.new(1, 0, 1, 0)
+    frame.Visible = false
+    frame.ScrollBarThickness = 6
+
+    tabs[name] = {Button = btn, Frame = frame}
+
+    btn.MouseButton1Click:Connect(function()
+        for _, t in pairs(tabs) do t.Frame.Visible = false end
+        frame.Visible = true
+    end)
+end
+
+createTab("Players")
+createTab("Checkpoints")
+createTab("Movement")
+
+tabs["Players"].Frame.Visible = true -- default
+
+-- Players Tab
+local function updatePlayers()
+    tabs["Players"].Frame:ClearAllChildren()
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then
+            local btn = Instance.new("TextButton", tabs["Players"].Frame)
+            btn.Size = UDim2.new(1, -10, 0, 30)
+            btn.Position = UDim2.new(0, 5, 0, (#tabs["Players"].Frame:GetChildren()-1)*35)
+            btn.Text = plr.Name
+            btn.MouseButton1Click:Connect(function()
+                if plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+                    Character:MoveTo(plr.Character.HumanoidRootPart.Position + Vector3.new(2,0,2))
+                end
+            end)
+        end
+    end
+end
+Players.PlayerAdded:Connect(updatePlayers)
+Players.PlayerRemoving:Connect(updatePlayers)
+updatePlayers()
+
+-- Checkpoints Tab
+for _, obj in pairs(workspace:GetDescendants()) do
+    if obj:IsA("BasePart") and obj.Name:lower():find("checkpoint") then
+        local btn = Instance.new("TextButton", tabs["Checkpoints"].Frame)
+        btn.Size = UDim2.new(1, -10, 0, 30)
+        btn.Position = UDim2.new(0, 5, 0, (#tabs["Checkpoints"].Frame:GetChildren()-1)*35)
+        btn.Text = obj.Name
+        btn.MouseButton1Click:Connect(function()
+            Character:MoveTo(obj.Position + Vector3.new(0,5,0))
         end)
     end
+end
+
+-- Movement Tab
+local speedLabel = Instance.new("TextLabel", tabs["Movement"].Frame)
+speedLabel.Text = "WalkSpeed"
+speedLabel.Size = UDim2.new(0, 200, 0, 30)
+speedLabel.Position = UDim2.new(0, 10, 0, 10)
+speedLabel.TextColor3 = Color3.new(1,1,1)
+speedLabel.BackgroundTransparency = 1
+
+local speedBox = Instance.new("TextBox", tabs["Movement"].Frame)
+speedBox.Size = UDim2.new(0, 100, 0, 30)
+speedBox.Position = UDim2.new(0, 220, 0, 10)
+speedBox.Text = tostring(DEFAULT_SPEED)
+speedBox.FocusLost:Connect(function()
+    local val = tonumber(speedBox.Text)
+    if val then Humanoid.WalkSpeed = val end
 end)
 
-UIS.InputChanged:Connect(function(input)
-    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - dragStart
-        MinLogo.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-    end
-end)
+-- Minimize -> Logo
+local MinLogo = Instance.new("ImageButton", ScreenGui)
+MinLogo.Size = UDim2.new(0, 50, 0, 50)
+MinLogo.Position = UDim2.new(0.5, -25, 0.9, -25)
+MinLogo.Image = LOGO_ID
+MinLogo.Visible = false
+makeDraggable(MinLogo)
 
--- Toggle Minimize
-MinBtn.MouseButton1Click:Connect(function()
+MinimizeBtn.MouseButton1Click:Connect(function()
     MainFrame.Visible = false
     MinLogo.Visible = true
 end)
@@ -103,217 +186,8 @@ MinLogo.MouseButton1Click:Connect(function()
     MainFrame.Visible = true
     MinLogo.Visible = false
 end)
-
--- Close
 CloseBtn.MouseButton1Click:Connect(function()
     ScreenGui:Destroy()
 end)
 
--- Container (Scrolling for Player/Checkpoint)
-local Container = Instance.new("Frame")
-Container.Size = UDim2.new(1, -20, 1, -50)
-Container.Position = UDim2.new(0, 10, 0, 40)
-Container.BackgroundTransparency = 1
-Container.Parent = MainFrame
-
--- ScrollFrame for Players
-local PlayerScroll = Instance.new("ScrollingFrame")
-PlayerScroll.Size = UDim2.new(0.5, -5, 1, 0)
-PlayerScroll.Position = UDim2.new(0, 0, 0, 0)
-PlayerScroll.CanvasSize = UDim2.new(0,0,0,0)
-PlayerScroll.ScrollBarThickness = 6
-PlayerScroll.BackgroundColor3 = Color3.fromRGB(35,35,35)
-PlayerScroll.Parent = Container
-
--- ScrollFrame for Checkpoints
-local CheckScroll = Instance.new("ScrollingFrame")
-CheckScroll.Size = UDim2.new(0.5, -5, 1, 0)
-CheckScroll.Position = UDim2.new(0.5, 5, 0, 0)
-CheckScroll.CanvasSize = UDim2.new(0,0,0,0)
-CheckScroll.ScrollBarThickness = 6
-CheckScroll.BackgroundColor3 = Color3.fromRGB(35,35,35)
-CheckScroll.Parent = Container
-
--- Function to teleport
-local function tpTo(pos)
-    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-        LocalPlayer.Character.HumanoidRootPart.CFrame = pos
-    end
-end
-
--- Update Player List
-local function updatePlayers()
-    PlayerScroll:ClearAllChildren()
-    local y = 0
-    for _, plr in pairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer then
-            local Btn = Instance.new("TextButton")
-            Btn.Size = UDim2.new(1, -5, 0, 25)
-            Btn.Position = UDim2.new(0, 0, 0, y)
-            Btn.Text = plr.Name
-            Btn.BackgroundColor3 = Color3.fromRGB(60,60,60)
-            Btn.TextColor3 = Color3.fromRGB(255,255,255)
-            Btn.Parent = PlayerScroll
-            Btn.MouseButton1Click:Connect(function()
-                if plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
-                    tpTo(plr.Character.HumanoidRootPart.CFrame)
-                end
-            end)
-            y = y + 30
-        end
-    end
-    PlayerScroll.CanvasSize = UDim2.new(0,0,0,y)
-end
-
-Players.PlayerAdded:Connect(updatePlayers)
-Players.PlayerRemoving:Connect(updatePlayers)
-updatePlayers()
-
--- Update Checkpoints
-local function updateCheckpoints()
-    CheckScroll:ClearAllChildren()
-    local y = 0
-    for _, obj in pairs(workspace:GetDescendants()) do
-        if obj:IsA("BasePart") and string.find(obj.Name:lower(), "checkpoint") then
-            local Btn = Instance.new("TextButton")
-            Btn.Size = UDim2.new(1, -5, 0, 25)
-            Btn.Position = UDim2.new(0, 0, 0, y)
-            Btn.Text = obj.Name
-            Btn.BackgroundColor3 = Color3.fromRGB(60,60,60)
-            Btn.TextColor3 = Color3.fromRGB(255,255,255)
-            Btn.Parent = CheckScroll
-            Btn.MouseButton1Click:Connect(function()
-                tpTo(obj.CFrame + Vector3.new(0,3,0))
-            end)
-            y = y + 30
-        end
-    end
-    CheckScroll.CanvasSize = UDim2.new(0,0,0,y)
-end
-
-updateCheckpoints()
-
--- Walkspeed slider
-local SliderFrame = Instance.new("Frame")
-SliderFrame.Size = UDim2.new(1, 0, 0, 40)
-SliderFrame.Position = UDim2.new(0, 0, 1, -45)
-SliderFrame.BackgroundColor3 = Color3.fromRGB(30,30,30)
-SliderFrame.Parent = MainFrame
-
-local SliderBar = Instance.new("Frame")
-SliderBar.Size = UDim2.new(0.8, 0, 0.3, 0)
-SliderBar.Position = UDim2.new(0.1, 0, 0.5, -5)
-SliderBar.BackgroundColor3 = Color3.fromRGB(80,80,80)
-SliderBar.Parent = SliderFrame
-
-local Knob = Instance.new("Frame")
-Knob.Size = UDim2.new(0, 10, 1.5, 0)
-Knob.Position = UDim2.new(0, 0, -0.25, 0)
-Knob.BackgroundColor3 = Color3.fromRGB(200,200,200)
-Knob.Active = true
-Knob.Draggable = true
-Knob.Parent = SliderBar
-
-local function setSpeedByKnob()
-    local percent = Knob.Position.X.Offset / (SliderBar.AbsoluteSize.X - Knob.AbsoluteSize.X)
-    percent = math.clamp(percent, 0, 1)
-    local speed = DEFAULT_SPEED + math.floor(percent * 100)
-    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
-        LocalPlayer.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = speed
-    end
-end
-
-Knob:GetPropertyChangedSignal("Position"):Connect(setSpeedByKnob)
-
--- Reset Button
-local ResetBtn = Instance.new("TextButton")
-ResetBtn.Size = UDim2.new(0.2,0,0.6,0)
-ResetBtn.Position = UDim2.new(0.8,0,0.2,0)
-ResetBtn.Text = "Reset"
-ResetBtn.BackgroundColor3 = Color3.fromRGB(80,80,80)
-ResetBtn.TextColor3 = Color3.fromRGB(255,255,255)
-ResetBtn.Parent = SliderFrame
-ResetBtn.MouseButton1Click:Connect(function()
-    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
-        LocalPlayer.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = DEFAULT_SPEED
-    end
-end)
-
--- Fly/Noclip
-local flying = false
-local noclip = false
-local flyConnection
-
-local FlyBtn = Instance.new("TextButton")
-FlyBtn.Size = UDim2.new(0.5, -5, 0, 30)
-FlyBtn.Position = UDim2.new(0,0,1,-80)
-FlyBtn.Text = "Fly: OFF"
-FlyBtn.BackgroundColor3 = Color3.fromRGB(60,60,100)
-FlyBtn.TextColor3 = Color3.fromRGB(255,255,255)
-FlyBtn.Parent = MainFrame
-
-local NoclipBtn = Instance.new("TextButton")
-NoclipBtn.Size = UDim2.new(0.5, -5, 0, 30)
-NoclipBtn.Position = UDim2.new(0.5,5,1,-80)
-NoclipBtn.Text = "Noclip: OFF"
-NoclipBtn.BackgroundColor3 = Color3.fromRGB(100,60,60)
-NoclipBtn.TextColor3 = Color3.fromRGB(255,255,255)
-NoclipBtn.Parent = MainFrame
-
--- Fly function
-local function toggleFly()
-    flying = not flying
-    FlyBtn.Text = "Fly: " .. (flying and "ON" or "OFF")
-    if flying then
-        flyConnection = RunService.RenderStepped:Connect(function()
-            if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                local HRP = LocalPlayer.Character.HumanoidRootPart
-                local camCF = workspace.CurrentCamera.CFrame
-                local moveDir = Vector3.new()
-                if UIS:IsKeyDown(Enum.KeyCode.W) then
-                    moveDir = moveDir + camCF.LookVector
-                end
-                if UIS:IsKeyDown(Enum.KeyCode.S) then
-                    moveDir = moveDir - camCF.LookVector
-                end
-                if UIS:IsKeyDown(Enum.KeyCode.A) then
-                    moveDir = moveDir - camCF.RightVector
-                end
-                if UIS:IsKeyDown(Enum.KeyCode.D) then
-                    moveDir = moveDir + camCF.RightVector
-                end
-                if UIS:IsKeyDown(Enum.KeyCode.Space) then
-                    moveDir = moveDir + Vector3.new(0,1,0)
-                end
-                if UIS:IsKeyDown(Enum.KeyCode.LeftShift) then
-                    moveDir = moveDir - Vector3.new(0,1,0)
-                end
-                if moveDir.Magnitude > 0 then
-                    HRP.Velocity = moveDir.Unit * 50
-                else
-                    HRP.Velocity = Vector3.new(0,0,0)
-                end
-            end
-        end)
-    else
-        if flyConnection then flyConnection:Disconnect() end
-    end
-end
-
-FlyBtn.MouseButton1Click:Connect(toggleFly)
-
--- Noclip function
-RunService.Stepped:Connect(function()
-    if noclip and LocalPlayer.Character then
-        for _, part in pairs(LocalPlayer.Character:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.CanCollide = false
-            end
-        end
-    end
-end)
-
-NoclipBtn.MouseButton1Click:Connect(function()
-    noclip = not noclip
-    NoclipBtn.Text = "Noclip: " .. (noclip and "ON" or "OFF")
-end)
+print("🐄 CowHub | Gunung Kalimantan Utility Loaded Successfully")
