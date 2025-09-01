@@ -98,25 +98,27 @@ local function updateCheckpoints()
     local checkpoints = {}
 
     for _, obj in pairs(workspace:GetDescendants()) do
-        -- Detect by name OR parent name
         local lname = obj.Name:lower()
         local parentName = obj.Parent and obj.Parent.Name:lower() or ""
 
+        -- broader detection: includes anything with "checkpoint", "finish", "goal", "cp"
         if obj:IsA("BasePart") then
-            if lname:find("checkpoint") or parentName:find("checkpoint") or lname:find("finish") or lname:find("goal") then
+            if lname:find("checkpoint") or lname:find("cp") or parentName:find("checkpoint") or parentName:find("cp") or lname:find("finish") or lname:find("goal") then
+                print("✅ Found checkpoint:", obj:GetFullName(), "Y=", math.floor(obj.Position.Y))
                 table.insert(checkpoints, {name = obj.Name, pos = obj.Position})
             end
         elseif obj:IsA("Model") then
-            if lname:find("checkpoint") or parentName:find("checkpoint") or lname:find("finish") or lname:find("goal") then
+            if lname:find("checkpoint") or lname:find("cp") or parentName:find("checkpoint") or parentName:find("cp") or lname:find("finish") or lname:find("goal") then
                 local primary = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
                 if primary then
+                    print("✅ Found checkpoint model:", obj:GetFullName(), "Y=", math.floor(primary.Position.Y))
                     table.insert(checkpoints, {name = obj.Name, pos = primary.Position})
                 end
             end
         end
     end
 
-    -- remove duplicates
+    -- dedupe
     local seen, unique = {}, {}
     for _, cp in ipairs(checkpoints) do
         local key = math.floor(cp.pos.X/5).."_"..math.floor(cp.pos.Y/5).."_"..math.floor(cp.pos.Z/5)
@@ -127,10 +129,10 @@ local function updateCheckpoints()
     end
     checkpoints = unique
 
-    -- sort by height
+    -- sort
     table.sort(checkpoints, function(a,b) return a.pos.Y < b.pos.Y end)
 
-    -- build buttons
+    -- buttons
     for _, cp in ipairs(checkpoints) do
         local button = CheckpointTab:CreateButton({
             Name = cp.name .. " (Y: " .. math.floor(cp.pos.Y) .. ")",
@@ -157,6 +159,7 @@ local function updateCheckpoints()
 
     checkpointLabel = CheckpointTab:CreateLabel("Found " .. #checkpoints .. " checkpoints")
 end
+
 
 
 -- Auto-update every 5 seconds
