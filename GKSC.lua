@@ -1,5 +1,5 @@
 -- 🐄 CowHub | Gunung Kalimantan — Fixed Full Script
--- Features: Players (live, streaming-aware), Checkpoints (stream-safe, dedupe, saved), Movement (WalkSpeed/Fly/Noclip)
+-- Features: Players (live, streaming-aware, Y-position display), Checkpoints (stream-safe, dedupe, saved), Movement (WalkSpeed/Fly/Noclip)
 
 -- Load Rayfield
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
@@ -24,7 +24,7 @@ local Humanoid = Character:WaitForChild("Humanoid")
 LocalPlayer.CharacterAdded:Connect(function(ch) Character = ch; Humanoid = ch:WaitForChild("Humanoid") end)
 
 -- ============================
--- Players Tab (live, streaming-aware)
+-- Players Tab (live, streaming-aware, Y-position display)
 -- ============================
 local PlayerTab = Window:CreateTab("Players", 4483362458)
 PlayerTab:CreateSection("Teleport to Players")
@@ -32,24 +32,53 @@ PlayerTab:CreateSection("Teleport to Players")
 local playerUI = {} -- store Rayfield button objects
 
 local function safeTeleportToPlayer(plr)
-    if not plr.Character or not plr.Character:FindFirstChild("HumanoidRootPart") then
-        -- Wait briefly for character to load
-        local timeout = 5 -- seconds
-        local start = tick()
-        while tick() - start < timeout and (not plr.Character or not plr.Character:FindFirstChild("HumanoidRootPart")) do
-            task.wait(0.1)
+    if not Character or not Character:FindFirstChild("HumanoidRootPart") then
+        Rayfield:Notify({ Title = "CowHub", Content = "Your character is not loaded", Duration = 3 })
+        return false
+    end
+
+    local hrp = Character.HumanoidRootPart
+    local attempts = 3
+    local waitPerAttempt = 1 -- seconds
+
+    for i = 1, attempts do
+        if plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+            local targetPos = plr.Character.HumanoidRootPart.Position + Vector3.new(2, 0, 2)
+            -- Raycast to find ground at target position
+            local params = RaycastParams.new()
+            params.FilterDescendantsInstances = { Character }
+            params.FilterType = Enum.RaycastFilterType.Blacklist
+            local origin = targetPos + Vector3.new(0, 50, 0)
+            local dir = Vector3.new(0, -100, 0)
+            local res = Workspace:Raycast(origin, dir, params)
+            if res and res.Position then
+                targetPos = res.Position + Vector3.new(0, 4, 0)
+            else
+                targetPos = targetPos + Vector3.new(0, 6, 0) -- Fallback
+            end
+            hrp.CFrame = CFrame.new(targetPos)
+            hrp.Velocity = Vector3.new(0, 0, 0)
+            Rayfield:Notify({ Title = "CowHub", Content = "Teleported to " .. plr.Name .. " (Y:" .. math.floor(plr.Character.HumanoidRootPart.Position.Y) .. ")", Duration = 2 })
+            return true
+        end
+        task.wait(waitPerAttempt)
+    end
+
+    -- Check if player is in workspace
+    local inWorkspace = false
+    for _, obj in ipairs(Workspace:GetChildren()) do
+        if obj == plr.Character then
+            inWorkspace = true
+            break
         end
     end
 
-    if plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") and Character and Character:FindFirstChild("HumanoidRootPart") then
-        local targetPos = plr.Character.HumanoidRootPart.Position + Vector3.new(2, 0, 2)
-        Character:MoveTo(targetPos)
-        Rayfield:Notify({ Title = "CowHub", Content = "Teleported to " .. plr.Name, Duration = 2 })
-        return true
+    if inWorkspace then
+        Rayfield:Notify({ Title = "CowHub", Content = "Failed to teleport to " .. plr.Name .. ": Character loaded but no HumanoidRootPart", Duration = 3 })
     else
-        Rayfield:Notify({ Title = "CowHub", Content = "Failed to teleport to " .. plr.Name .. ": Player too far or not loaded", Duration = 3 })
-        return false
+        Rayfield:Notify({ Title = "CowHub", Content = "Failed to teleport to " .. plr.Name .. ": Player too far or not loaded (streaming issue)", Duration = 3 })
     end
+    return false
 end
 
 local function rebuildPlayers()
@@ -58,9 +87,15 @@ local function rebuildPlayers()
 
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer then
+            local buttonName = plr.Name
+            if plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+                buttonName = plr.Name .. " (Y:" .. math.floor(plr.Character.HumanoidRootPart.Position.Y) .. ")"
+            else
+                buttonName = plr.Name .. " (Y:?)"
+            end
             local ok, btn = pcall(function()
                 return PlayerTab:CreateButton({
-                    Name = "Teleport to " .. plr.Name,
+                    Name = buttonName,
                     Callback = function()
                         safeTeleportToPlayer(plr)
                     end
@@ -71,8 +106,16 @@ local function rebuildPlayers()
     end
 end
 
--- Refresh players on join/leave
-Players.PlayerAdded:Connect(function() task.wait(0.5); rebuildPlayers() end)
+-- Refresh players on join/leave and monitor character loading
+Players.PlayerAdded:Connect(function(plr)
+    task.wait(0.5)
+    rebuildPlayers()
+    -- Monitor character loading for streaming
+    plr.CharacterAppearanceLoaded:Connect(function()
+        task.wait(0.5)
+        rebuildPlayers()
+    end)
+end)
 Players.PlayerRemoving:Connect(function() task.wait(0.5); rebuildPlayers() end)
 PlayerTab:CreateButton({
     Name = "Refresh Players",
