@@ -88,27 +88,8 @@ local function getCheckpointPosition(obj)
     return nil
 end
 
-local function isRealCheckpoint(obj)
-    -- 1. Name contains checkpoint keywords
-    local lowerName = obj.Name:lower()
-    if lowerName:find("checkpoint") or lowerName:find("cp") then
-        return true
-    end
-
-    -- 2. If object has a TextLabel/BillboardGui/SurfaceGui with "checkpoint" text
-    for _, child in pairs(obj:GetDescendants()) do
-        if child:IsA("TextLabel") or child:IsA("TextButton") or child:IsA("TextBox") then
-            if string.lower(child.Text):find("checkpoint") then
-                return true
-            end
-        end
-    end
-
-    return false
-end
-
 local function updateCheckpoints()
-    -- Clear old buttons
+    -- clear old buttons
     for _, btn in ipairs(checkpointButtons) do
         btn:Destroy()
     end
@@ -117,16 +98,15 @@ local function updateCheckpoints()
 
     local checkpoints = {}
 
+    -- look for checkpoint parts
     for _, obj in pairs(workspace:GetDescendants()) do
-        if isRealCheckpoint(obj) then
-            local pos = getCheckpointPosition(obj)
-            if pos then
-                table.insert(checkpoints, {name = obj.Name, pos = pos})
-            end
+        if obj:IsA("BasePart") and obj.Name:lower():find("checkpoint") then
+            local pos = obj.Position
+            table.insert(checkpoints, {name = obj.Name, pos = pos})
         end
     end
 
-    -- Remove duplicates
+    -- remove duplicates
     local seen, unique = {}, {}
     for _, cp in ipairs(checkpoints) do
         local key = math.floor(cp.pos.X/10).."_"..math.floor(cp.pos.Y/10).."_"..math.floor(cp.pos.Z/10)
@@ -137,12 +117,13 @@ local function updateCheckpoints()
     end
     checkpoints = unique
 
-    -- Sort by height
+    -- sort by height (Y axis)
     table.sort(checkpoints, function(a,b) return a.pos.Y < b.pos.Y end)
 
+    -- make a button for each checkpoint
     for _, cp in ipairs(checkpoints) do
         local button = CheckpointTab:CreateButton({
-            Name = "Checkpoint (Y: " .. math.floor(cp.pos.Y) .. ")",
+            Name = cp.name .. " (Y: " .. math.floor(cp.pos.Y) .. ")",
             Callback = function()
                 if Character and Character:FindFirstChild("HumanoidRootPart") then
                     Character:MoveTo(cp.pos + Vector3.new(0,5,0))
