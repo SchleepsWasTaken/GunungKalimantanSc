@@ -65,101 +65,80 @@ task.spawn(function()
 end)
 
 ----------------------------------------------------------------------
--- Checkpoints Tab (Filtered Detection)
+-- Checkpoints Tab (Optimized for Streaming)
 ----------------------------------------------------------------------
 local CheckpointTab = Window:CreateTab("Checkpoints", 4483362458)
 CheckpointTab:CreateSection("Teleport to Checkpoints")
 
+local checkpoints = {}
 local checkpointButtons = {}
 local checkpointLabel
-local checkpoints = {}
 
--- helper to register a checkpoint
+-- helper to refresh GUI buttons
+local function refreshCheckpointButtons()
+    for _, btn in ipairs(checkpointButtons) do
+        btn:Destroy()
+    end
+    checkpointButtons = {}
+
+    -- sort by Y height
+    local sorted = {}
+    for _, cp in pairs(checkpoints) do
+        table.insert(sorted, cp)
+    end
+    table.sort(sorted, function(a,b) return a.pos.Y < b.pos.Y end)
+
+    for _, cp in ipairs(sorted) do
+        local button = CheckpointTab:CreateButton({
+            Name = cp.name .. " (Y: " .. math.floor(cp.pos.Y) .. ")",
+            Callback = function()
+                if Character and Character:FindFirstChild("HumanoidRootPart") then
+                    Character:MoveTo(cp.pos + Vector3.new(0,5,0))
+                end
+            end
+        })
+        table.insert(checkpointButtons, button)
+    end
+
+    if checkpointLabel then checkpointLabel:Destroy() end
+    checkpointLabel = CheckpointTab:CreateLabel("Found " .. tostring(#sorted) .. " checkpoints")
+end
+
+-- register a checkpoint if valid
 local function registerCheckpoint(obj, pos)
     local key = math.floor(pos.X/5).."_"..math.floor(pos.Y/5).."_"..math.floor(pos.Z/5)
     if checkpoints[key] then return end -- already added
 
     checkpoints[key] = {name = obj.Name, pos = pos}
-    local cp = checkpoints[key]
-
-    local button = CheckpointTab:CreateButton({
-        Name = cp.name .. " (Y: " .. math.floor(pos.Y) .. ")",
-        Callback = function()
-            if Character and Character:FindFirstChild("HumanoidRootPart") then
-                Character:MoveTo(pos + Vector3.new(0,5,0))
-            end
-        end
-    })
-    table.insert(checkpointButtons, button)
-    print("✅ Registered checkpoint:", obj:GetFullName(), "Y =", math.floor(pos.Y))
+    refreshCheckpointButtons()
 end
 
--- scan function with filtering
-local function scanForCheckpoints(container)
-    for _, obj in pairs(container:GetDescendants()) do
-        if obj:IsA("BasePart") then
-            local lname = obj.Name:lower()
-            -- filter: only real checkpoints
-            if lname:find("checkpoint") or lname:find("flag") or lname:find("goal") or lname:find("line") or lname:find("end") then
-                if not (lname:find("medkit") or lname:find("kotak") or lname:find("aqua")) then
-                    registerCheckpoint(obj, obj.Position)
-                end
+-- scan function
+local function tryRegister(obj)
+    if obj:IsA("BasePart") or obj:IsA("Model") then
+        local lname = obj.Name:lower()
+        if lname:find("checkpoint") then
+            local pos
+            if obj:IsA("BasePart") then
+                pos = obj.Position
+            elseif obj:IsA("Model") then
+                local primary = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+                if primary then pos = primary.Position end
             end
-        elseif obj:IsA("Model") then
-            local lname = obj.Name:lower()
-            if lname:find("checkpoint") or lname:find("flag") or lname:find("goal") or lname:find("line") or lname:find("end") then
-                if not (lname:find("medkit") or lname:find("kotak") or lname:find("aqua")) then
-                    local primary = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
-                    if primary then
-                        registerCheckpoint(obj, primary.Position)
-                    end
-                end
-            end
+            if pos then registerCheckpoint(obj, pos) end
         end
     end
 end
 
--- scan important containers
-local containers = {workspace, game.ReplicatedStorage, game.Lighting}
-for _, c in ipairs(containers) do
-    scanForCheckpoints(c)
-    c.DescendantAdded:Connect(function(obj)
-        task.wait(0.1)
-        if obj:IsA("BasePart") then
-            local lname = obj.Name:lower()
-            if lname:find("checkpoint") or lname:find("flag") or lname:find("goal") or lname:find("line") or lname:find("end") then
-                if not (lname:find("medkit") or lname:find("kotak") or lname:find("aqua")) then
-                    registerCheckpoint(obj, obj.Position)
-                end
-            end
-        end
-    end)
+-- initial scan
+for _, obj in pairs(workspace:GetDescendants()) do
+    tryRegister(obj)
 end
 
--- refresh label & finish line button
-task.spawn(function()
-    while task.wait(5) do
-        if checkpointLabel then checkpointLabel:Destroy() end
-        checkpointLabel = CheckpointTab:CreateLabel("Found " .. tostring(#checkpointButtons) .. " checkpoints")
-
-        local highest = nil
-        for _, cp in pairs(checkpoints) do
-            if not highest or cp.pos.Y > highest.pos.Y then
-                highest = cp
-            end
-        end
-
-        if highest then
-            CheckpointTab:CreateButton({
-                Name = "🏁 Finish Line (Y: " .. math.floor(highest.pos.Y) .. ")",
-                Callback = function()
-                    if Character and Character:FindFirstChild("HumanoidRootPart") then
-                        Character:MoveTo(highest.pos + Vector3.new(0,10,0))
-                    end
-                end
-            })
-        end
-    end
+-- catch streamed-in checkpoints
+workspace.DescendantAdded:Connect(function(obj)
+    task.wait(0.1)
+    tryRegister(obj)
 end)
 
 ----------------------------------------------------------------------
