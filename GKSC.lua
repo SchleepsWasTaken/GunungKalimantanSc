@@ -1,5 +1,5 @@
 -- 🐄 CowHub | Gunung Kalimantan — Fixed Full Script
--- Features: Players (live, streaming-aware, Y-position display), Checkpoints (stream-safe, dedupe, saved), Movement (WalkSpeed/Fly/Noclip)
+-- Features: Players (live, streaming-aware, Y-position display, move toward), Checkpoints (stream-safe, dedupe, saved), Movement (WalkSpeed/Fly/Noclip)
 
 -- Load Rayfield
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
@@ -24,7 +24,7 @@ local Humanoid = Character:WaitForChild("Humanoid")
 LocalPlayer.CharacterAdded:Connect(function(ch) Character = ch; Humanoid = ch:WaitForChild("Humanoid") end)
 
 -- ============================
--- Players Tab (live, streaming-aware, Y-position display)
+-- Players Tab (live, streaming-aware, Y-position display, move toward)
 -- ============================
 local PlayerTab = Window:CreateTab("Players", 4483362458)
 PlayerTab:CreateSection("Teleport to Players")
@@ -38,13 +38,12 @@ local function safeTeleportToPlayer(plr)
     end
 
     local hrp = Character.HumanoidRootPart
-    local attempts = 3
-    local waitPerAttempt = 1 -- seconds
+    local attempts = 5 -- Increased attempts
+    local waitPerAttempt = 1.5 -- Longer wait per attempt
 
     for i = 1, attempts do
         if plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
             local targetPos = plr.Character.HumanoidRootPart.Position + Vector3.new(2, 0, 2)
-            -- Raycast to find ground at target position
             local params = RaycastParams.new()
             params.FilterDescendantsInstances = { Character }
             params.FilterType = Enum.RaycastFilterType.Blacklist
@@ -54,7 +53,7 @@ local function safeTeleportToPlayer(plr)
             if res and res.Position then
                 targetPos = res.Position + Vector3.new(0, 4, 0)
             else
-                targetPos = targetPos + Vector3.new(0, 6, 0) -- Fallback
+                targetPos = targetPos + Vector3.new(0, 6, 0)
             end
             hrp.CFrame = CFrame.new(targetPos)
             hrp.Velocity = Vector3.new(0, 0, 0)
@@ -64,20 +63,23 @@ local function safeTeleportToPlayer(plr)
         task.wait(waitPerAttempt)
     end
 
-    -- Check if player is in workspace
-    local inWorkspace = false
-    for _, obj in ipairs(Workspace:GetChildren()) do
-        if obj == plr.Character then
-            inWorkspace = true
-            break
+    -- Fallback: Move toward player's last known approximate position
+    local approxY = 0
+    if plr.Character then
+        for _, part in ipairs(plr.Character:GetChildren()) do
+            if part:IsA("BasePart") then
+                approxY = math.max(approxY, part.Position.Y)
+            end
         end
     end
-
-    if inWorkspace then
-        Rayfield:Notify({ Title = "CowHub", Content = "Failed to teleport to " .. plr.Name .. ": Character loaded but no HumanoidRootPart", Duration = 3 })
-    else
-        Rayfield:Notify({ Title = "CowHub", Content = "Failed to teleport to " .. plr.Name .. ": Player too far or not loaded (streaming issue)", Duration = 3 })
+    if approxY > 0 then
+        local movePos = Vector3.new(hrp.Position.X, approxY, hrp.Position.Z) + Vector3.new(0, 10, 0)
+        hrp.CFrame = CFrame.new(movePos)
+        Rayfield:Notify({ Title = "CowHub", Content = "Moved toward " .. plr.Name .. " (Y:" .. math.floor(approxY) .. ") to load character. Try teleport again.", Duration = 3 })
+        return false
     end
+
+    Rayfield:Notify({ Title = "CowHub", Content = "Failed to teleport to " .. plr.Name .. ": Player too far or not loaded (streaming issue)", Duration = 3 })
     return false
 end
 
@@ -88,11 +90,21 @@ local function rebuildPlayers()
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer then
             local buttonName = plr.Name
-            if plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
-                buttonName = plr.Name .. " (Y:" .. math.floor(plr.Character.HumanoidRootPart.Position.Y) .. ")"
-            else
-                buttonName = plr.Name .. " (Y:?)"
+            local yPos = "?"
+            if plr.Character then
+                local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    yPos = math.floor(hrp.Position.Y)
+                else
+                    for _, part in ipairs(plr.Character:GetChildren()) do
+                        if part:IsA("BasePart") then
+                            yPos = math.floor(part.Position.Y)
+                            break
+                        end
+                    end
+                end
             end
+            buttonName = plr.Name .. " (Y:" .. yPos .. ")"
             local ok, btn = pcall(function()
                 return PlayerTab:CreateButton({
                     Name = buttonName,
@@ -110,7 +122,6 @@ end
 Players.PlayerAdded:Connect(function(plr)
     task.wait(0.5)
     rebuildPlayers()
-    -- Monitor character loading for streaming
     plr.CharacterAppearanceLoaded:Connect(function()
         task.wait(0.5)
         rebuildPlayers()
