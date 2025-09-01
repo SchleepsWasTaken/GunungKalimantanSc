@@ -89,7 +89,6 @@ local function getCheckpointPosition(obj)
 end
 
 local function updateCheckpoints()
-    -- clear old buttons
     for _, btn in ipairs(checkpointButtons) do
         btn:Destroy()
     end
@@ -98,14 +97,21 @@ local function updateCheckpoints()
 
     local checkpoints = {}
 
-    -- find checkpoint parts anywhere
     for _, obj in pairs(workspace:GetDescendants()) do
-        if obj:IsA("BasePart") and obj.Name:lower():find("checkpoint") then
-            table.insert(checkpoints, {name = obj.Name, pos = obj.Position})
-        elseif obj:IsA("Model") and obj.Name:lower():find("checkpoint") then
-            local primary = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
-            if primary then
-                table.insert(checkpoints, {name = obj.Name, pos = primary.Position})
+        -- Detect by name OR parent name
+        local lname = obj.Name:lower()
+        local parentName = obj.Parent and obj.Parent.Name:lower() or ""
+
+        if obj:IsA("BasePart") then
+            if lname:find("checkpoint") or parentName:find("checkpoint") or lname:find("finish") or lname:find("goal") then
+                table.insert(checkpoints, {name = obj.Name, pos = obj.Position})
+            end
+        elseif obj:IsA("Model") then
+            if lname:find("checkpoint") or parentName:find("checkpoint") or lname:find("finish") or lname:find("goal") then
+                local primary = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+                if primary then
+                    table.insert(checkpoints, {name = obj.Name, pos = primary.Position})
+                end
             end
         end
     end
@@ -121,7 +127,7 @@ local function updateCheckpoints()
     end
     checkpoints = unique
 
-    -- sort by height (Y)
+    -- sort by height
     table.sort(checkpoints, function(a,b) return a.pos.Y < b.pos.Y end)
 
     -- build buttons
@@ -137,7 +143,6 @@ local function updateCheckpoints()
         table.insert(checkpointButtons, button)
     end
 
-    -- special "Finish Line" button (highest Y checkpoint)
     if #checkpoints > 0 then
         local top = checkpoints[#checkpoints]
         CheckpointTab:CreateButton({
@@ -152,8 +157,6 @@ local function updateCheckpoints()
 
     checkpointLabel = CheckpointTab:CreateLabel("Found " .. #checkpoints .. " checkpoints")
 end
-
-
 
 
 -- Auto-update every 5 seconds
