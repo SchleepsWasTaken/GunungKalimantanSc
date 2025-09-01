@@ -35,10 +35,10 @@ local PlayerTab = Window:CreateTab("Players", 4483362458)
 local PlayerSection = PlayerTab:CreateSection("Teleport to Players")
 
 local playerButtons = {}  -- Table to store buttons for destruction
-local refreshButton
+local refreshPlayerButton
 
 local function updatePlayerButtons()
-    -- Destroy old buttons
+    -- Destroy old buttons (except refresh)
     for _, btn in ipairs(playerButtons) do
         btn:Destroy()
     end
@@ -51,7 +51,7 @@ local function updatePlayerButtons()
                 Name = "Teleport to " .. plr.Name,
                 Callback = function()
                     if plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") and Character and Character:FindFirstChild("HumanoidRootPart") then
-                        Character.HumanoidRootPart.CFrame = plr.Character.HumanoidRootPart.CFrame * CFrame.new(2, 0, 2)
+                        Character:MoveTo(plr.Character.HumanoidRootPart.Position + Vector3.new(2, 0, 2))
                     end
                 end
             })
@@ -61,19 +61,13 @@ local function updatePlayerButtons()
 end
 
 -- Add a manual refresh button
-refreshButton = PlayerTab:CreateButton({
+refreshPlayerButton = PlayerTab:CreateButton({
     Name = "Refresh Players",
     Callback = updatePlayerButtons
 })
 
-Players.PlayerAdded:Connect(function()
-    task.wait(1) -- Slight delay to ensure player is fully added
-    updatePlayerButtons()
-end)
-Players.PlayerRemoving:Connect(function()
-    task.wait(1) -- Slight delay
-    updatePlayerButtons()
-end)
+Players.PlayerAdded:Connect(updatePlayerButtons)
+Players.PlayerRemoving:Connect(updatePlayerButtons)
 updatePlayerButtons()
 
 ----------------------------------------------------------------------
@@ -82,14 +76,18 @@ updatePlayerButtons()
 local CheckpointTab = Window:CreateTab("Checkpoints", 4483362458)
 local CheckpointSection = CheckpointTab:CreateSection("Teleport to Checkpoints")
 
+local checkpointButtons = {}  -- Table to store checkpoint buttons
+local refreshCheckpointButton
+local checkpointLabel
+
 local function getCheckpointPosition(obj)
-    if obj:IsA("BasePart") then
+    if obj:IsA("BasePart") or obj:IsA("SpawnLocation") then
         return obj.Position
     elseif obj:IsA("Model") and obj.PrimaryPart then
         return obj.PrimaryPart.Position
     elseif obj:IsA("Model") then
         -- Find a suitable part, e.g., first BasePart
-        for _, child in pairs(obj:GetDescendants()) do  -- Changed to GetDescendants for deeper search
+        for _, child in pairs(obj:GetDescendants()) do
             if child:IsA("BasePart") then
                 return child.Position
             end
@@ -98,25 +96,43 @@ local function getCheckpointPosition(obj)
     return nil  -- No valid position
 end
 
-local function loadCheckpoints()
+local function updateCheckpoints()
+    -- Destroy old buttons and label
+    for _, btn in ipairs(checkpointButtons) do
+        btn:Destroy()
+    end
+    checkpointButtons = {}
+    if checkpointLabel then
+        checkpointLabel:Destroy()
+    end
+
     local checkpoints = {}
     
-    -- Broader search: "checkpoint" or "pos" or "cp" in name (case insensitive)
+    -- Broader search: include more keywords and SpawnLocation
     for _, obj in pairs(workspace:GetDescendants()) do
-        local lowerName = obj.Name:lower()
-        if lowerName:find("checkpoint") or lowerName:find("pos") or lowerName:find("cp") then
+        if obj:IsA("SpawnLocation") then
             local pos = getCheckpointPosition(obj)
             if pos then
-                table.insert(checkpoints, {name = obj.Name, obj = obj, pos = pos})
+                table.insert(checkpoints, {name = obj.Name .. " (Spawn)", obj = obj, pos = pos})
+            end
+        else
+            local lowerName = obj.Name:lower()
+            if lowerName:find("checkpoint") or lowerName:find("pos") or lowerName:find("cp") or 
+               lowerName:find("stage") or lowerName:find("spawn") or lowerName:find("bonfire") or 
+               lowerName:find("portal") then
+                local pos = getCheckpointPosition(obj)
+                if pos then
+                    table.insert(checkpoints, {name = obj.Name, obj = obj, pos = pos})
+                end
             end
         end
     end
     
-    -- Remove duplicates by name or close positions
+    -- Remove duplicates by approx position
     local uniqueCheckpoints = {}
     local seen = {}
     for _, cp in ipairs(checkpoints) do
-        local key = cp.name .. "_" .. math.floor(cp.pos.Y)  -- Unique by name and approx Y
+        local key = math.floor(cp.pos.X / 10) .. "_" .. math.floor(cp.pos.Y / 10) .. "_" .. math.floor(cp.pos.Z / 10)
         if not seen[key] then
             seen[key] = true
             table.insert(uniqueCheckpoints, cp)
@@ -124,28 +140,43 @@ local function loadCheckpoints()
     end
     checkpoints = uniqueCheckpoints
     
-    -- Sort by Y position ascending (lower to higher)
+    -- Sort by Y position ascending
     table.sort(checkpoints, function(a, b)
         return a.pos.Y < b.pos.Y
     end)
     
     -- Create buttons in sorted order
     for _, cp in ipairs(checkpoints) do
-        CheckpointTab:CreateButton({
+        local button = CheckpointTab:CreateButton({
             Name = cp.name .. " (Y: " .. math.floor(cp.pos.Y) .. ")",
             Callback = function()
                 if Character and Character:FindFirstChild("HumanoidRootPart") then
-                    Character.HumanoidRootPart.CFrame = CFrame.new(cp.pos + Vector3.new(0, 5, 0))
+                    Character:MoveTo(cp.pos + Vector3.new(0, 5, 0))
                 end
             end
         })
+        table.insert(checkpointButtons, button)
     end
     
     -- Add a label with count
-    CheckpointTab:CreateLabel("Found " .. #checkpoints .. " checkpoints")
+    checkpointLabel = CheckpointTab:CreateLabel("Found " .. #checkpoints .. " checkpoints")
 end
 
-loadCheckpoints()
+-- Add a manual refresh button for checkpoints
+refreshCheckpointButton = CheckpointTab:CreateButton({
+    Name = "Refresh Checkpoints",
+    Callback = updateCheckpoints
+})
+
+-- Initial load
+updateCheckpoints()
+
+-- Optional: Reload on workspace changes (if checkpoints load dynamically)
+workspace.ChildAdded:Connect(function(child)
+    if child:IsA("BasePart") or child:IsA("Model") or child:IsA("SpawnLocation") then
+        updateCheckpoints()
+    end
+end)
 
 ----------------------------------------------------------------------
 -- Movement Tab
@@ -165,7 +196,7 @@ MovementTab:CreateSlider({
     end,
 })
 
--- Fly Toggle (with controls, swapped W/S for reverse feel)
+-- Fly Toggle (with swapped W/S for reverse feel)
 local flying = false
 local flyConnection
 MovementTab:CreateToggle({
