@@ -1,5 +1,5 @@
 -- 🐄 CowHub | Gunung Kalimantan — Fixed Full Script
--- Features: Players (live, no stacking), Checkpoints (stream-safe, dedupe, saved), Movement (WalkSpeed/Fly/Noclip)
+-- Features: Players (live, real-time Y), Checkpoints (stream-safe, dedupe, saved), Movement (WalkSpeed/Fly/Noclip)
 
 -- Load Rayfield
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
@@ -17,6 +17,7 @@ local Window = Rayfield:CreateWindow({
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 local Humanoid = Character:WaitForChild("Humanoid")
@@ -24,13 +25,15 @@ local Humanoid = Character:WaitForChild("Humanoid")
 LocalPlayer.CharacterAdded:Connect(function(ch) Character = ch; Humanoid = ch:WaitForChild("Humanoid") end)
 
 -- ============================
--- Players Tab (live, no stacking)
+-- Players Tab (live, real-time Y)
 -- ============================
 local PlayerTab = Window:CreateTab("Players", 4483362458)
 PlayerTab:CreateSection("Teleport to Players")
 
 local playerUI = {} -- store Rayfield button objects
 local rebuildDebounce = false
+local updateDebounce = false
+local playerButtons = {} -- map player to button for real-time updates
 
 local function safeTeleportToPlayer(plr)
     if not Character or not Character:FindFirstChild("HumanoidRootPart") then
@@ -56,6 +59,7 @@ local function rebuildPlayers()
         pcall(function() if b and b.Destroy then b:Destroy() end end)
     end
     playerUI = {}
+    playerButtons = {}
 
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer then
@@ -80,12 +84,50 @@ local function rebuildPlayers()
                     end
                 })
             end)
-            if ok and btn then table.insert(playerUI, btn) end
+            if ok and btn then
+                table.insert(playerUI, btn)
+                playerButtons[plr] = btn
+            end
         end
     end
 
     rebuildDebounce = false
 end
+
+-- Real-time Y-position update
+local function updatePlayerPositions()
+    if updateDebounce then return end
+    updateDebounce = true
+
+    for plr, btn in pairs(playerButtons) do
+        if plr and btn then
+            local yPos = "?"
+            if plr.Character then
+                local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    yPos = math.floor(hrp.Position.Y)
+                else
+                    for _, part in ipairs(plr.Character:GetChildren()) do
+                        if part:IsA("BasePart") then
+                            yPos = math.floor(part.Position.Y)
+                            break
+                        end
+                    end
+                end
+            end
+            local newName = plr.Name .. " (Y:" .. yPos .. ")"
+            pcall(function() btn:Set({ Name = newName }) end)
+        end
+    end
+
+    updateDebounce = false
+end
+
+-- Start real-time update loop
+RunService.Heartbeat:Connect(function()
+    task.wait(0.5) -- Update every 0.5 seconds to avoid UI overload
+    updatePlayerPositions()
+end)
 
 -- Refresh players with debounced events
 Players.PlayerAdded:Connect(function(plr)
