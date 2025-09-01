@@ -69,18 +69,52 @@ updatePlayerButtons()
 local CheckpointTab = Window:CreateTab("Checkpoints", 4483362458)
 local CheckpointSection = CheckpointTab:CreateSection("Teleport to Checkpoints")
 
-local function loadCheckpoints()
-    for _, obj in pairs(workspace:GetDescendants()) do
-        if obj:IsA("BasePart") and obj.Name:lower():find("checkpoint") then
-            CheckpointTab:CreateButton({
-                Name = obj.Name,
-                Callback = function()
-                    if Character and Character:FindFirstChild("HumanoidRootPart") then
-                        Character.HumanoidRootPart.CFrame = CFrame.new(obj.Position + Vector3.new(0, 5, 0))
-                    end
-                end
-            })
+local function getCheckpointPosition(obj)
+    if obj:IsA("BasePart") then
+        return obj.Position
+    elseif obj:IsA("Model") and obj.PrimaryPart then
+        return obj.PrimaryPart.Position
+    elseif obj:IsA("Model") then
+        -- Find a suitable part, e.g., first BasePart
+        for _, child in pairs(obj:GetChildren()) do
+            if child:IsA("BasePart") then
+                return child.Position
+            end
         end
+    end
+    return nil  -- No valid position
+end
+
+local function loadCheckpoints()
+    local checkpoints = {}
+    
+    -- Search for any descendant with "checkpoint" in name (case insensitive)
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj.Name:lower():find("checkpoint") then
+            local pos = getCheckpointPosition(obj)
+            if pos then
+                table.insert(checkpoints, {name = obj.Name, obj = obj, pos = pos})
+            end
+        end
+    end
+    
+    -- Sort by extracting numbers from names for ascending order
+    table.sort(checkpoints, function(a, b)
+        local numA = tonumber(a.name:match("%d+")) or 0
+        local numB = tonumber(b.name:match("%d+")) or 0
+        return numA < numB
+    end)
+    
+    -- Create buttons in sorted order
+    for _, cp in ipairs(checkpoints) do
+        CheckpointTab:CreateButton({
+            Name = cp.name,
+            Callback = function()
+                if Character and Character:FindFirstChild("HumanoidRootPart") then
+                    Character.HumanoidRootPart.CFrame = CFrame.new(cp.pos + Vector3.new(0, 5, 0))
+                end
+            end
+        })
     end
 end
 
@@ -104,7 +138,7 @@ MovementTab:CreateSlider({
     end,
 })
 
--- Fly Toggle (basic implementation with controls)
+-- Fly Toggle (with fixed controls and hover)
 local flying = false
 local flyConnection
 MovementTab:CreateToggle({
@@ -119,18 +153,18 @@ MovementTab:CreateToggle({
             flyConnection = game:GetService("RunService").Heartbeat:Connect(function()
                 local moveDir = Vector3.new()
                 local userInput = game:GetService("UserInputService")
-                if userInput:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + Vector3.new(0, 0, -1) end
-                if userInput:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir + Vector3.new(0, 0, 1) end
-                if userInput:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir + Vector3.new(-1, 0, 0) end
-                if userInput:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + Vector3.new(1, 0, 0) end
-                if userInput:IsKeyDown(Enum.KeyCode.Space) then moveDir = moveDir + Vector3.new(0, 1, 0) end
-                if userInput:IsKeyDown(Enum.KeyCode.LeftControl) then moveDir = moveDir + Vector3.new(0, -1, 0) end
+                if userInput:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + Vector3.new(0, 0, 1) end  -- Forward
+                if userInput:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir + Vector3.new(0, 0, -1) end  -- Backward
+                if userInput:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir + Vector3.new(-1, 0, 0) end  -- Left
+                if userInput:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + Vector3.new(1, 0, 0) end  -- Right
+                if userInput:IsKeyDown(Enum.KeyCode.Space) then moveDir = moveDir + Vector3.new(0, 1, 0) end  -- Up
+                if userInput:IsKeyDown(Enum.KeyCode.LeftControl) then moveDir = moveDir + Vector3.new(0, -1, 0) end  -- Down
 
-                if moveDir.Magnitude > 0 then
-                    hrp.Velocity = (Character.PrimaryPart.CFrame.LookVector * moveDir.Z + Character.PrimaryPart.CFrame.RightVector * moveDir.X + Vector3.new(0, moveDir.Y, 0)) * 50
-                else
-                    hrp.Velocity = Vector3.new(0, 0, 0)  -- Hover when no input
-                end
+                local primaryPart = Character.PrimaryPart or hrp
+                local velocity = (primaryPart.CFrame.LookVector * moveDir.Z + primaryPart.CFrame.RightVector * moveDir.X + Vector3.new(0, moveDir.Y, 0)) * 50
+                
+                -- To hover when no vertical input, set Y to 0 (resets velocity Y each frame to counter gravity)
+                hrp.Velocity = velocity
             end)
         else
             if flyConnection then
