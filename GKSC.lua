@@ -94,60 +94,63 @@ local function updateCheckpoints()
         btn:Destroy()
     end
     checkpointButtons = {}
-    if checkpointLabel then checkpointLabel:Destroy() end
+    if checkpointLabel then
+        checkpointLabel:Destroy()
+    end
 
     local checkpoints = {}
 
+    -- Search everything in workspace EXCEPT spawners
     for _, obj in pairs(workspace:GetDescendants()) do
-        local name = obj.Name:lower()
+        local lowerName = obj.Name:lower()
 
-        -- ❌ Ignore SpawnLocations
-        if not obj:IsA("SpawnLocation") then
-            if name:find("checkpoint")
-            or name:find("cp")
-            or name:find("stage")
-            or name:find("bonfire")
-            or name:find("portal")
-            or name:find("flag")
-            or name:find("goal")
-            or name:find("finish") then
-                local pos = getCheckpointPosition(obj)
-                if pos then
-                    table.insert(checkpoints, {name = obj.Name, pos = pos})
-                end
+        -- Only catch true checkpoint objects, ignore spawns
+        if (lowerName:find("checkpoint") or lowerName:find("cp") or lowerName:find("stage") 
+            or lowerName:find("pos") or lowerName:find("bonfire") or lowerName:find("portal") 
+            or lowerName:find("finish") or lowerName:find("goal")) 
+            and not obj:IsA("SpawnLocation") then
+
+            local pos = getCheckpointPosition(obj)
+            if pos then
+                table.insert(checkpoints, {name = obj.Name, obj = obj, pos = pos})
             end
         end
     end
 
-    -- Deduplicate by rounded position
-    local seen, unique = {}, {}
+    -- Remove duplicates by approx position
+    local uniqueCheckpoints = {}
+    local seen = {}
     for _, cp in ipairs(checkpoints) do
-        local key = math.floor(cp.pos.X/10).."_"..math.floor(cp.pos.Y/10).."_"..math.floor(cp.pos.Z/10)
+        local key = math.floor(cp.pos.X / 10) .. "_" .. math.floor(cp.pos.Y / 10) .. "_" .. math.floor(cp.pos.Z / 10)
         if not seen[key] then
             seen[key] = true
-            table.insert(unique, cp)
+            table.insert(uniqueCheckpoints, cp)
         end
     end
-    checkpoints = unique
+    checkpoints = uniqueCheckpoints
 
-    -- Sort by Y ascending (but include ALL Y, no filter)
-    table.sort(checkpoints, function(a,b) return a.pos.Y < b.pos.Y end)
+    -- Sort by Y so you see them in order of height (lowest → highest)
+    table.sort(checkpoints, function(a, b)
+        return a.pos.Y < b.pos.Y
+    end)
 
     -- Create buttons
     for _, cp in ipairs(checkpoints) do
         local button = CheckpointTab:CreateButton({
-            Name = cp.name.." (Y:"..math.floor(cp.pos.Y)..")",
+            Name = cp.name .. " (Y: " .. math.floor(cp.pos.Y) .. ")",
             Callback = function()
                 if Character and Character:FindFirstChild("HumanoidRootPart") then
-                    Character:MoveTo(cp.pos + Vector3.new(0,5,0))
+                    Character:MoveTo(cp.pos + Vector3.new(0, 5, 0))
                 end
             end
         })
         table.insert(checkpointButtons, button)
     end
 
-    checkpointLabel = CheckpointTab:CreateLabel("Found "..#checkpoints.." checkpoints")
+    -- Add label with count
+    checkpointLabel = CheckpointTab:CreateLabel("Found " .. #checkpoints .. " checkpoints")
 end
+
 
 
 -- Auto-update every 5 seconds
