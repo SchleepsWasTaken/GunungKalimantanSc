@@ -98,18 +98,22 @@ local function updateCheckpoints()
 
     local checkpoints = {}
 
-    -- look for checkpoint parts
+    -- find checkpoint parts anywhere
     for _, obj in pairs(workspace:GetDescendants()) do
         if obj:IsA("BasePart") and obj.Name:lower():find("checkpoint") then
-            local pos = obj.Position
-            table.insert(checkpoints, {name = obj.Name, pos = pos})
+            table.insert(checkpoints, {name = obj.Name, pos = obj.Position})
+        elseif obj:IsA("Model") and obj.Name:lower():find("checkpoint") then
+            local primary = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+            if primary then
+                table.insert(checkpoints, {name = obj.Name, pos = primary.Position})
+            end
         end
     end
 
     -- remove duplicates
     local seen, unique = {}, {}
     for _, cp in ipairs(checkpoints) do
-        local key = math.floor(cp.pos.X/10).."_"..math.floor(cp.pos.Y/10).."_"..math.floor(cp.pos.Z/10)
+        local key = math.floor(cp.pos.X/5).."_"..math.floor(cp.pos.Y/5).."_"..math.floor(cp.pos.Z/5)
         if not seen[key] then
             seen[key] = true
             table.insert(unique, cp)
@@ -117,10 +121,10 @@ local function updateCheckpoints()
     end
     checkpoints = unique
 
-    -- sort by height (Y axis)
+    -- sort by height (Y)
     table.sort(checkpoints, function(a,b) return a.pos.Y < b.pos.Y end)
 
-    -- make a button for each checkpoint
+    -- build buttons
     for _, cp in ipairs(checkpoints) do
         local button = CheckpointTab:CreateButton({
             Name = cp.name .. " (Y: " .. math.floor(cp.pos.Y) .. ")",
@@ -133,8 +137,22 @@ local function updateCheckpoints()
         table.insert(checkpointButtons, button)
     end
 
+    -- special "Finish Line" button (highest Y checkpoint)
+    if #checkpoints > 0 then
+        local top = checkpoints[#checkpoints]
+        CheckpointTab:CreateButton({
+            Name = "🏁 Finish Line (Y: " .. math.floor(top.pos.Y) .. ")",
+            Callback = function()
+                if Character and Character:FindFirstChild("HumanoidRootPart") then
+                    Character:MoveTo(top.pos + Vector3.new(0,10,0))
+                end
+            end
+        })
+    end
+
     checkpointLabel = CheckpointTab:CreateLabel("Found " .. #checkpoints .. " checkpoints")
 end
+
 
 
 
