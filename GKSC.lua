@@ -35,6 +35,7 @@ local PlayerTab = Window:CreateTab("Players", 4483362458)
 local PlayerSection = PlayerTab:CreateSection("Teleport to Players")
 
 local playerButtons = {}  -- Table to store buttons for destruction
+local refreshButton
 
 local function updatePlayerButtons()
     -- Destroy old buttons
@@ -50,7 +51,7 @@ local function updatePlayerButtons()
                 Name = "Teleport to " .. plr.Name,
                 Callback = function()
                     if plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") and Character and Character:FindFirstChild("HumanoidRootPart") then
-                        Character.HumanoidRootPart.CFrame = plr.Character.HumanoidRootPart.CFrame + Vector3.new(2, 0, 2)
+                        Character.HumanoidRootPart.CFrame = plr.Character.HumanoidRootPart.CFrame * CFrame.new(2, 0, 2)
                     end
                 end
             })
@@ -59,8 +60,20 @@ local function updatePlayerButtons()
     end
 end
 
-Players.PlayerAdded:Connect(updatePlayerButtons)
-Players.PlayerRemoving:Connect(updatePlayerButtons)
+-- Add a manual refresh button
+refreshButton = PlayerTab:CreateButton({
+    Name = "Refresh Players",
+    Callback = updatePlayerButtons
+})
+
+Players.PlayerAdded:Connect(function()
+    task.wait(1) -- Slight delay to ensure player is fully added
+    updatePlayerButtons()
+end)
+Players.PlayerRemoving:Connect(function()
+    task.wait(1) -- Slight delay
+    updatePlayerButtons()
+end)
 updatePlayerButtons()
 
 ----------------------------------------------------------------------
@@ -76,7 +89,7 @@ local function getCheckpointPosition(obj)
         return obj.PrimaryPart.Position
     elseif obj:IsA("Model") then
         -- Find a suitable part, e.g., first BasePart
-        for _, child in pairs(obj:GetChildren()) do
+        for _, child in pairs(obj:GetDescendants()) do  -- Changed to GetDescendants for deeper search
             if child:IsA("BasePart") then
                 return child.Position
             end
@@ -88,9 +101,10 @@ end
 local function loadCheckpoints()
     local checkpoints = {}
     
-    -- Search for any descendant with "checkpoint" in name (case insensitive)
+    -- Broader search: "checkpoint" or "pos" or "cp" in name (case insensitive)
     for _, obj in pairs(workspace:GetDescendants()) do
-        if obj.Name:lower():find("checkpoint") then
+        local lowerName = obj.Name:lower()
+        if lowerName:find("checkpoint") or lowerName:find("pos") or lowerName:find("cp") then
             local pos = getCheckpointPosition(obj)
             if pos then
                 table.insert(checkpoints, {name = obj.Name, obj = obj, pos = pos})
@@ -98,17 +112,27 @@ local function loadCheckpoints()
         end
     end
     
-    -- Sort by extracting numbers from names for ascending order
+    -- Remove duplicates by name or close positions
+    local uniqueCheckpoints = {}
+    local seen = {}
+    for _, cp in ipairs(checkpoints) do
+        local key = cp.name .. "_" .. math.floor(cp.pos.Y)  -- Unique by name and approx Y
+        if not seen[key] then
+            seen[key] = true
+            table.insert(uniqueCheckpoints, cp)
+        end
+    end
+    checkpoints = uniqueCheckpoints
+    
+    -- Sort by Y position ascending (lower to higher)
     table.sort(checkpoints, function(a, b)
-        local numA = tonumber(a.name:match("%d+")) or 0
-        local numB = tonumber(b.name:match("%d+")) or 0
-        return numA < numB
+        return a.pos.Y < b.pos.Y
     end)
     
     -- Create buttons in sorted order
     for _, cp in ipairs(checkpoints) do
         CheckpointTab:CreateButton({
-            Name = cp.name,
+            Name = cp.name .. " (Y: " .. math.floor(cp.pos.Y) .. ")",
             Callback = function()
                 if Character and Character:FindFirstChild("HumanoidRootPart") then
                     Character.HumanoidRootPart.CFrame = CFrame.new(cp.pos + Vector3.new(0, 5, 0))
@@ -116,6 +140,9 @@ local function loadCheckpoints()
             end
         })
     end
+    
+    -- Add a label with count
+    CheckpointTab:CreateLabel("Found " .. #checkpoints .. " checkpoints")
 end
 
 loadCheckpoints()
@@ -138,7 +165,7 @@ MovementTab:CreateSlider({
     end,
 })
 
--- Fly Toggle (with fixed controls and hover)
+-- Fly Toggle (with controls, swapped W/S for reverse feel)
 local flying = false
 local flyConnection
 MovementTab:CreateToggle({
@@ -153,17 +180,16 @@ MovementTab:CreateToggle({
             flyConnection = game:GetService("RunService").Heartbeat:Connect(function()
                 local moveDir = Vector3.new()
                 local userInput = game:GetService("UserInputService")
-                if userInput:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + Vector3.new(0, 0, 1) end  -- Forward
-                if userInput:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir + Vector3.new(0, 0, -1) end  -- Backward
-                if userInput:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir + Vector3.new(-1, 0, 0) end  -- Left
-                if userInput:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + Vector3.new(1, 0, 0) end  -- Right
-                if userInput:IsKeyDown(Enum.KeyCode.Space) then moveDir = moveDir + Vector3.new(0, 1, 0) end  -- Up
-                if userInput:IsKeyDown(Enum.KeyCode.LeftControl) then moveDir = moveDir + Vector3.new(0, -1, 0) end  -- Down
+                if userInput:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + Vector3.new(0, 0, -1) end  -- Swapped for reverse
+                if userInput:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir + Vector3.new(0, 0, 1) end   -- Swapped
+                if userInput:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir + Vector3.new(-1, 0, 0) end
+                if userInput:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + Vector3.new(1, 0, 0) end
+                if userInput:IsKeyDown(Enum.KeyCode.Space) then moveDir = moveDir + Vector3.new(0, 1, 0) end
+                if userInput:IsKeyDown(Enum.KeyCode.LeftControl) then moveDir = moveDir + Vector3.new(0, -1, 0) end
 
                 local primaryPart = Character.PrimaryPart or hrp
                 local velocity = (primaryPart.CFrame.LookVector * moveDir.Z + primaryPart.CFrame.RightVector * moveDir.X + Vector3.new(0, moveDir.Y, 0)) * 50
                 
-                -- To hover when no vertical input, set Y to 0 (resets velocity Y each frame to counter gravity)
                 hrp.Velocity = velocity
             end)
         else
