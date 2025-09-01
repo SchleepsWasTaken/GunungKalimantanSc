@@ -138,17 +138,25 @@ local function safeTeleport(pos)
 end
 
 -- UI rebuild (debounced)
-local ui_debounce = false
 local function rebuildCheckpointUI()
     if ui_debounce then return end
     ui_debounce = true
     task.spawn(function()
         task.wait(0.25)
-        -- destroy old buttons safely
-        for _, b in ipairs(checkpoint_buttons) do pcall(function() if b and b.Destroy then b:Destroy() end end) end
+
+        -- wipe old UI
+        for _, b in ipairs(checkpoint_buttons) do
+            pcall(function() if b and b.Destroy then b:Destroy() end end)
+        end
         checkpoint_buttons = {}
 
-        -- build sorted array lowest -> highest
+        -- clear any labels (Rayfield has no Destroy, so easiest is: remake tab section)
+        CheckpointTab:CreateSection("Teleport to Checkpoints (Refreshed)")
+
+        -- wipe checkpoints_map so only current scan is shown
+        checkpoints_map = {}
+
+        -- rebuild sorted checkpoints fresh
         local arr = {}
         for _, v in pairs(checkpoints_map) do table.insert(arr, v) end
         table.sort(arr, function(a,b) return a.pos.Y < b.pos.Y end)
@@ -157,34 +165,28 @@ local function rebuildCheckpointUI()
             local ok, btn = pcall(function()
                 return CheckpointTab:CreateButton({
                     Name = ("Checkpoint %d | %s (Y:%d)"):format(idx, cp.name, math.floor(cp.pos.Y)),
-                    Callback = function()
-                        safeTeleport(cp.pos)
-                    end
+                    Callback = function() safeTeleport(cp.pos) end
                 })
             end)
             if ok and btn then table.insert(checkpoint_buttons, btn) end
         end
 
-        -- finish line button (highest)
         if #arr > 0 then
-            pcall(function() 
-                local top = arr[#arr]
-                local okf, fbtn = pcall(function()
-                    return CheckpointTab:CreateButton({
-                        Name = ("🏁 Finish Line (Y:%d)"):format(math.floor(top.pos.Y)),
-                        Callback = function() safeTeleport(top.pos + Vector3.new(0,10,0)) end
-                    })
-                end)
-                if okf and fbtn then table.insert(checkpoint_buttons, fbtn) end
+            local top = arr[#arr]
+            local okf, fbtn = pcall(function()
+                return CheckpointTab:CreateButton({
+                    Name = ("🏁 Finish Line (Y:%d)"):format(math.floor(top.pos.Y)),
+                    Callback = function() safeTeleport(top.pos + Vector3.new(0,10,0)) end
+                })
             end)
+            if okf and fbtn then table.insert(checkpoint_buttons, fbtn) end
         end
 
-        -- label
         pcall(function() CheckpointTab:CreateLabel("Found " .. tostring(#arr) .. " checkpoints") end)
-
         ui_debounce = false
     end)
 end
+
 
 -- register and persist
 local function registerCheckpoint(obj, pos)
