@@ -233,7 +233,8 @@ local function safeSummitTeleport(targetPos)
         hrp.CFrame = CFrame.new(newPos)
         task.wait(0.5) -- Pause 0.5 seconds between steps to simulate natural movement
     end
-    hrp.CFrame = CFrame.new(targetPos)
+    -- Use safeTeleport at the end to prevent falling
+    safeTeleport(targetPos)
     Rayfield:Notify({ Title = "CowHub", Content = "Reached summit safely", Duration = 2 })
 end
 -- Get sorted checkpoints
@@ -388,6 +389,7 @@ local autoActive = false
 local timer = 300 -- 5 minutes in seconds
 local autoConn
 local countdownLabel = CheckpointTab:CreateLabel("Auto Teleport Off")
+local isPerforming = false
 
 local function performAutoTeleport()
     local arr = getSortedCheckpoints()
@@ -399,7 +401,7 @@ local function performAutoTeleport()
     local summit = arr[#arr].pos
     -- Simulate walk to summit
     safeSummitTeleport(summit)
-    task.wait(1) -- Brief pause at summit
+    task.wait(5) -- Wait 5 seconds at summit
     -- Teleport back to bottom
     safeTeleport(bottom)
     Rayfield:Notify({ Title = "CowHub", Content = "Back to bottom, resetting timer", Duration = 2 })
@@ -413,11 +415,13 @@ CheckpointTab:CreateToggle({
         if val then
             timer = 300
             autoConn = RunService.Heartbeat:Connect(function(dt)
-                if not autoActive then return end
+                if not autoActive or isPerforming then return end
                 timer = timer - dt
                 if timer <= 0 then
+                    isPerforming = true
                     performAutoTeleport()
                     timer = 300 -- Reset timer after cycle
+                    isPerforming = false
                 end
                 -- Update label
                 local min = math.floor(timer / 60)
