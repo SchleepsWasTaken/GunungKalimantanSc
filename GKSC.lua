@@ -101,17 +101,19 @@ local function updateCheckpoints()
         local lname = obj.Name:lower()
         local parentName = obj.Parent and obj.Parent.Name:lower() or ""
 
-        -- broader detection: includes anything with "checkpoint", "finish", "goal", "cp"
+        -- broader detection
         if obj:IsA("BasePart") then
-            if lname:find("checkpoint") or lname:find("cp") or parentName:find("checkpoint") or parentName:find("cp") or lname:find("finish") or lname:find("goal") then
-                print("✅ Found checkpoint:", obj:GetFullName(), "Y=", math.floor(obj.Position.Y))
+            if lname:find("checkpoint") or lname:find("cp") or lname:find("flag") or lname:find("stage") or lname:find("line") or lname:find("end") 
+            or parentName:find("checkpoint") or parentName:find("flag") or parentName:find("stage") or parentName:find("goal") then
+                print("✅ Found possible checkpoint:", obj:GetFullName(), "Y =", math.floor(obj.Position.Y))
                 table.insert(checkpoints, {name = obj.Name, pos = obj.Position})
             end
         elseif obj:IsA("Model") then
-            if lname:find("checkpoint") or lname:find("cp") or parentName:find("checkpoint") or parentName:find("cp") or lname:find("finish") or lname:find("goal") then
+            if lname:find("checkpoint") or lname:find("cp") or lname:find("flag") or lname:find("stage") or lname:find("line") or lname:find("end") 
+            or parentName:find("checkpoint") or parentName:find("flag") or parentName:find("stage") or parentName:find("goal") then
                 local primary = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
                 if primary then
-                    print("✅ Found checkpoint model:", obj:GetFullName(), "Y=", math.floor(primary.Position.Y))
+                    print("✅ Found possible checkpoint model:", obj:GetFullName(), "Y =", math.floor(primary.Position.Y))
                     table.insert(checkpoints, {name = obj.Name, pos = primary.Position})
                 end
             end
@@ -159,6 +161,7 @@ local function updateCheckpoints()
 
     checkpointLabel = CheckpointTab:CreateLabel("Found " .. #checkpoints .. " checkpoints")
 end
+
 
 
 
