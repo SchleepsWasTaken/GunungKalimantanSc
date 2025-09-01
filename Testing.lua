@@ -273,7 +273,7 @@ local function rebuildCheckpointUI()
             local okf, fbtn = pcall(function()
                 return CheckpointTab:CreateButton({
                     Name = ("🏁 Finish Line (Y:%d)"):format(math.floor(top.pos.Y)),
-                    Callback = function() safeTeleport(top.pos + Vector3.new(0, 10, 0)) end
+                    Callback = function() safeTeleport(top.pos + Vector3.new(0, 20, 0)) end
                 })
             end)
             if okf and fbtn then table.insert(checkpoint_buttons, fbtn) end
@@ -398,7 +398,7 @@ local function performAutoTeleport()
         return
     end
     local bottom = arr[1].pos
-    local summit = arr[#arr].pos + Vector3.new(0, 10, 0)
+    local summit = arr[#arr].pos + Vector3.new(0, 20, 0)
     -- Simulate walk to summit
     safeSummitTeleport(summit)
     task.wait(5) -- Wait 5 seconds at summit
