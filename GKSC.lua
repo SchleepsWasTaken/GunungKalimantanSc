@@ -1,5 +1,5 @@
 -- 🐄 CowHub | Gunung Kalimantan — Fixed Full Script
--- Features: Players (live, real-time Y), Checkpoints (stream-safe, dedupe, saved), Movement (WalkSpeed/Fly/Noclip)
+-- Features: Players (live, real-time Y, no stacking), Checkpoints (stream-safe, dedupe, saved), Movement (WalkSpeed/Fly/Noclip)
 
 -- Load Rayfield
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
@@ -25,7 +25,7 @@ local Humanoid = Character:WaitForChild("Humanoid")
 LocalPlayer.CharacterAdded:Connect(function(ch) Character = ch; Humanoid = ch:WaitForChild("Humanoid") end)
 
 -- ============================
--- Players Tab (live, real-time Y)
+-- Players Tab (live, real-time Y, no stacking)
 -- ============================
 local PlayerTab = Window:CreateTab("Players", 4483362458)
 PlayerTab:CreateSection("Teleport to Players")
@@ -54,16 +54,16 @@ local function rebuildPlayers()
     if rebuildDebounce then return end
     rebuildDebounce = true
 
-    -- Destroy all existing buttons
+    -- Destroy all existing buttons and clear tables
     for _, b in ipairs(playerUI) do
         pcall(function() if b and b.Destroy then b:Destroy() end end)
     end
     playerUI = {}
     playerButtons = {}
 
+    -- Recreate buttons
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer then
-            local buttonName = plr.Name
             local yPos = "?"
             if plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
                 yPos = math.floor(plr.Character.HumanoidRootPart.Position.Y)
@@ -75,7 +75,7 @@ local function rebuildPlayers()
                     end
                 end
             end
-            buttonName = plr.Name .. " (Y:" .. yPos .. ")"
+            local buttonName = plr.Name .. " (Y:" .. yPos .. ")"
             local ok, btn = pcall(function()
                 return PlayerTab:CreateButton({
                     Name = buttonName,
@@ -116,7 +116,29 @@ local function updatePlayerPositions()
                 end
             end
             local newName = plr.Name .. " (Y:" .. yPos .. ")"
-            pcall(function() btn:Set({ Name = newName }) end)
+            pcall(function() btn:Set({ Name = newName }) end) -- Attempt to update button name
+            if not pcall(function() btn:Set({ Name = newName }) end) then
+                -- If Set fails, recreate the button
+                local ok, newBtn = pcall(function()
+                    return PlayerTab:CreateButton({
+                        Name = newName,
+                        Callback = function()
+                            safeTeleportToPlayer(plr)
+                        end
+                    })
+                end)
+                if ok and newBtn then
+                    btn:Destroy()
+                    playerButtons[plr] = newBtn
+                    for i, oldBtn in ipairs(playerUI) do
+                        if oldBtn == btn then
+                            table.remove(playerUI, i)
+                            table.insert(playerUI, newBtn)
+                            break
+                        end
+                    end
+                end
+            end
         end
     end
 
@@ -124,8 +146,8 @@ local function updatePlayerPositions()
 end
 
 -- Start real-time update loop
-RunService.Heartbeat:Connect(function()
-    task.wait(0.5) -- Update every 0.5 seconds to avoid UI overload
+RunService.RenderStepped:Connect(function()
+    task.wait(0.5) -- Update every 0.5 seconds
     updatePlayerPositions()
 end)
 
