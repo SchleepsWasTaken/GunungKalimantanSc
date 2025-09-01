@@ -4,7 +4,7 @@
 
 -- CONFIG
 local DEFAULT_SPEED = 16
-local LOGO_ID = "rbxassetid://YOUR_LOGO_ID_HERE" -- Replace with your own logo asset id
+local LOGO_ID = "rbxassetid://96561295484774" -- Replace with your own logo asset id
 
 -- Services
 local Players = game:GetService("Players")
