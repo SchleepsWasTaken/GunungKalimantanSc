@@ -1,5 +1,5 @@
 -- 🐄 CowHub | Gunung Kalimantan — Fixed Full Script
--- Features: Players (live, simplified teleport), Checkpoints (stream-safe, dedupe, saved), Movement (WalkSpeed/Fly/Noclip)
+-- Features: Players (live, no stacking), Checkpoints (stream-safe, dedupe, saved), Movement (WalkSpeed/Fly/Noclip)
 
 -- Load Rayfield
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
@@ -24,12 +24,13 @@ local Humanoid = Character:WaitForChild("Humanoid")
 LocalPlayer.CharacterAdded:Connect(function(ch) Character = ch; Humanoid = ch:WaitForChild("Humanoid") end)
 
 -- ============================
--- Players Tab (live, simplified teleport)
+-- Players Tab (live, no stacking)
 -- ============================
 local PlayerTab = Window:CreateTab("Players", 4483362458)
 PlayerTab:CreateSection("Teleport to Players")
 
 local playerUI = {} -- store Rayfield button objects
+local rebuildDebounce = false
 
 local function safeTeleportToPlayer(plr)
     if not Character or not Character:FindFirstChild("HumanoidRootPart") then
@@ -47,7 +48,13 @@ local function safeTeleportToPlayer(plr)
 end
 
 local function rebuildPlayers()
-    for _, b in ipairs(playerUI) do pcall(function() if b and b.Destroy then b:Destroy() end end) end
+    if rebuildDebounce then return end
+    rebuildDebounce = true
+
+    -- Destroy all existing buttons
+    for _, b in ipairs(playerUI) do
+        pcall(function() if b and b.Destroy then b:Destroy() end end)
+    end
     playerUI = {}
 
     for _, plr in ipairs(Players:GetPlayers()) do
@@ -76,9 +83,11 @@ local function rebuildPlayers()
             if ok and btn then table.insert(playerUI, btn) end
         end
     end
+
+    rebuildDebounce = false
 end
 
--- Refresh players on join/leave and monitor character loading
+-- Refresh players with debounced events
 Players.PlayerAdded:Connect(function(plr)
     task.wait(0.5)
     rebuildPlayers()
@@ -87,7 +96,10 @@ Players.PlayerAdded:Connect(function(plr)
         rebuildPlayers()
     end)
 end)
-Players.PlayerRemoving:Connect(function() task.wait(0.5); rebuildPlayers() end)
+Players.PlayerRemoving:Connect(function()
+    task.wait(0.5)
+    rebuildPlayers()
+end)
 PlayerTab:CreateButton({
     Name = "Refresh Players",
     Callback = rebuildPlayers
