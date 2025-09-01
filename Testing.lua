@@ -398,7 +398,7 @@ local function performAutoTeleport()
         return
     end
     local bottom = arr[1].pos
-    local summit = arr[#arr].pos
+    local summit = arr[#arr].pos + Vector3.new(0, 10, 0)
     -- Simulate walk to summit
     safeSummitTeleport(summit)
     task.wait(5) -- Wait 5 seconds at summit
