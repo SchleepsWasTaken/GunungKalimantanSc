@@ -89,6 +89,7 @@ local function getCheckpointPosition(obj)
 end
 
 local function updateCheckpoints()
+    -- Destroy old buttons and label
     for _, btn in ipairs(checkpointButtons) do
         btn:Destroy()
     end
@@ -99,17 +100,21 @@ local function updateCheckpoints()
 
     for _, obj in pairs(workspace:GetDescendants()) do
         local name = obj.Name:lower()
-        if obj:IsA("SpawnLocation")
-        or name:find("checkpoint")
-        or name:find("pos")
-        or name:find("cp")
-        or name:find("stage")
-        or name:find("spawn")
-        or name:find("bonfire")
-        or name:find("portal") then
-            local pos = getCheckpointPosition(obj)
-            if pos then
-                table.insert(checkpoints, {name = obj.Name, pos = pos})
+
+        -- ❌ Ignore SpawnLocations
+        if not obj:IsA("SpawnLocation") then
+            if name:find("checkpoint")
+            or name:find("cp")
+            or name:find("stage")
+            or name:find("bonfire")
+            or name:find("portal")
+            or name:find("flag")
+            or name:find("goal")
+            or name:find("finish") then
+                local pos = getCheckpointPosition(obj)
+                if pos then
+                    table.insert(checkpoints, {name = obj.Name, pos = pos})
+                end
             end
         end
     end
@@ -125,8 +130,10 @@ local function updateCheckpoints()
     end
     checkpoints = unique
 
+    -- Sort by Y ascending (but include ALL Y, no filter)
     table.sort(checkpoints, function(a,b) return a.pos.Y < b.pos.Y end)
 
+    -- Create buttons
     for _, cp in ipairs(checkpoints) do
         local button = CheckpointTab:CreateButton({
             Name = cp.name.." (Y:"..math.floor(cp.pos.Y)..")",
@@ -141,6 +148,7 @@ local function updateCheckpoints()
 
     checkpointLabel = CheckpointTab:CreateLabel("Found "..#checkpoints.." checkpoints")
 end
+
 
 -- Auto-update every 5 seconds
 task.spawn(function()
