@@ -1,5 +1,5 @@
 -- 🐄 CowHub | Gunung Kalimantan — Fixed Full Script
--- Features: Players (live), Checkpoints (stream-safe, dedupe, saved), Movement (WalkSpeed/Fly/Noclip)
+-- Features: Players (live, streaming-aware), Checkpoints (stream-safe, dedupe, saved), Movement (WalkSpeed/Fly/Noclip)
 
 -- Load Rayfield
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
@@ -24,12 +24,33 @@ local Humanoid = Character:WaitForChild("Humanoid")
 LocalPlayer.CharacterAdded:Connect(function(ch) Character = ch; Humanoid = ch:WaitForChild("Humanoid") end)
 
 -- ============================
--- Players Tab (live)
+-- Players Tab (live, streaming-aware)
 -- ============================
 local PlayerTab = Window:CreateTab("Players", 4483362458)
 PlayerTab:CreateSection("Teleport to Players")
 
 local playerUI = {} -- store Rayfield button objects
+
+local function safeTeleportToPlayer(plr)
+    if not plr.Character or not plr.Character:FindFirstChild("HumanoidRootPart") then
+        -- Wait briefly for character to load
+        local timeout = 5 -- seconds
+        local start = tick()
+        while tick() - start < timeout and (not plr.Character or not plr.Character:FindFirstChild("HumanoidRootPart")) do
+            task.wait(0.1)
+        end
+    end
+
+    if plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") and Character and Character:FindFirstChild("HumanoidRootPart") then
+        local targetPos = plr.Character.HumanoidRootPart.Position + Vector3.new(2, 0, 2)
+        Character:MoveTo(targetPos)
+        Rayfield:Notify({ Title = "CowHub", Content = "Teleported to " .. plr.Name, Duration = 2 })
+        return true
+    else
+        Rayfield:Notify({ Title = "CowHub", Content = "Failed to teleport to " .. plr.Name .. ": Player too far or not loaded", Duration = 3 })
+        return false
+    end
+end
 
 local function rebuildPlayers()
     for _, b in ipairs(playerUI) do pcall(function() if b and b.Destroy then b:Destroy() end end) end
@@ -41,10 +62,7 @@ local function rebuildPlayers()
                 return PlayerTab:CreateButton({
                     Name = "Teleport to " .. plr.Name,
                     Callback = function()
-                        if plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") and Character and Character:FindFirstChild("HumanoidRootPart") then
-                            local targetPos = plr.Character.HumanoidRootPart.Position + Vector3.new(2, 0, 2)
-                            Character:MoveTo(targetPos)
-                        end
+                        safeTeleportToPlayer(plr)
                     end
                 })
             end)
@@ -53,8 +71,13 @@ local function rebuildPlayers()
     end
 end
 
-Players.PlayerAdded:Connect(rebuildPlayers)
-Players.PlayerRemoving:Connect(rebuildPlayers)
+-- Refresh players on join/leave
+Players.PlayerAdded:Connect(function() task.wait(0.5); rebuildPlayers() end)
+Players.PlayerRemoving:Connect(function() task.wait(0.5); rebuildPlayers() end)
+PlayerTab:CreateButton({
+    Name = "Refresh Players",
+    Callback = rebuildPlayers
+})
 rebuildPlayers()
 
 -- ============================
