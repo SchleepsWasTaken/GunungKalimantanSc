@@ -1,224 +1,368 @@
--- 🐄 CowHub | Gunung Kalimantan
+-- 🐄 CowHub | Gunung Kalimantan — Fixed Full Script
+-- Features: Players (live), Checkpoints (stream-safe, dedupe, saved), Movement (WalkSpeed/Fly/Noclip)
 
 -- Load Rayfield
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 
--- Create Window
 local Window = Rayfield:CreateWindow({
     Name = "🐄 CowHub | Gunung Kalimantan",
     LoadingTitle = "Loading CowHub...",
     LoadingSubtitle = "by You",
-    ConfigurationSaving = {
-        Enabled = true,
-        FolderName = "CowHubConfig",
-        FileName = "GKSC_Config"
-    },
-    Discord = {Enabled = false},
+    ConfigurationSaving = { Enabled = true, FolderName = "CowHubConfig", FileName = "GKSC_Config" },
+    Discord = { Enabled = false },
     KeySystem = false
 })
 
+-- Services & player refs
 local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 local Humanoid = Character:WaitForChild("Humanoid")
 
--- Refresh character on respawn
-LocalPlayer.CharacterAdded:Connect(function(newChar)
-    Character = newChar
-    Humanoid = newChar:WaitForChild("Humanoid")
-end)
+LocalPlayer.CharacterAdded:Connect(function(ch) Character = ch; Humanoid = ch:WaitForChild("Humanoid") end)
 
-----------------------------------------------------------------------
--- Players Tab (Auto Updating)
-----------------------------------------------------------------------
+-- ============================
+-- Players Tab (live)
+-- ============================
 local PlayerTab = Window:CreateTab("Players", 4483362458)
 PlayerTab:CreateSection("Teleport to Players")
 
-local playerButtons = {}
+local playerUI = {} -- store Rayfield button objects (if returned), but we always pcall destruction
 
-local function updatePlayers()
-    for _, btn in ipairs(playerButtons) do
-        btn:Destroy()
-    end
-    playerButtons = {}
+local function rebuildPlayers()
+    -- try to safely destroy old buttons (pcall so we don't crash if Rayfield returns nil)
+    for _, b in ipairs(playerUI) do pcall(function() if b and b.Destroy then b:Destroy() end end) end
+    playerUI = {}
 
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer then
-            local button = PlayerTab:CreateButton({
-                Name = "Teleport to " .. plr.Name,
-                Callback = function()
-                    if plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") and Character and Character:FindFirstChild("HumanoidRootPart") then
-                        Character:MoveTo(plr.Character.HumanoidRootPart.Position + Vector3.new(2,0,2))
+            local ok, btn = pcall(function()
+                return PlayerTab:CreateButton({
+                    Name = "Teleport to " .. plr.Name,
+                    Callback = function()
+                        if plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") and Character and Character:FindFirstChild("HumanoidRootPart") then
+                            -- safe teleport near target
+                            local targetPos = plr.Character.HumanoidRootPart.Position + Vector3.new(2,0,2)
+                            Character:MoveTo(targetPos)
+                        end
                     end
-                end
-            })
-            table.insert(playerButtons, button)
+                })
+            end)
+            if ok and btn then table.insert(playerUI, btn) end
         end
     end
 end
 
--- Auto-update every 3 seconds
-task.spawn(function()
-    while task.wait(3) do
-        updatePlayers()
-    end
-end)
+Players.PlayerAdded:Connect(rebuildPlayers)
+Players.PlayerRemoving:Connect(rebuildPlayers)
+rebuildPlayers()
 
-----------------------------------------------------------------------
--- Checkpoints Tab (Optimized)
-----------------------------------------------------------------------
+-- ============================
+-- Checkpoints Tab (robust)
+-- ============================
 local CheckpointTab = Window:CreateTab("Checkpoints", 4483362458)
 CheckpointTab:CreateSection("Teleport to Checkpoints")
 
-local checkpointButtons = {}
-local checkpoints = {}
-local seenKeys = {}
-local finishButton
+-- Config
+local SAVE_FOLDER = "CowHubConfig"
+local SAVE_FILE = SAVE_FOLDER .. "/gk_checkpoints.json"
+local DEDUPE_TOL = 3 -- studs for dedupe (smaller tolerance to avoid merging distinct CPs)
 
--- Helper: register a checkpoint
-local function registerCheckpoint(obj, pos)
-    local key = math.floor(pos.X/5).."_"..math.floor(pos.Y/5).."_"..math.floor(pos.Z/5)
-    if seenKeys[key] then return end
-    seenKeys[key] = true
+-- Storage
+local checkpoints_map = {}   -- key -> {name=string, pos=Vector3}
+local checkpoint_buttons = {} -- Rayfield buttons (destroyed with pcall)
+local saved_list = {}        -- array-writable for persistence (table of {name, pos={X,Y,Z}})
 
-    table.insert(checkpoints, {name = obj.Name, pos = pos})
+-- Filesystem helpers (if executor supports)
+if isfolder then pcall(function() if not isfolder(SAVE_FOLDER) then makefolder(SAVE_FOLDER) end end) end
 
-    -- Sort checkpoints by height
-    table.sort(checkpoints, function(a,b) return a.pos.Y < b.pos.Y end)
-
-    -- Clear old buttons
-    for _, btn in ipairs(checkpointButtons) do
-        btn:Destroy()
-    end
-    checkpointButtons = {}
-    if finishButton then finishButton:Destroy() finishButton = nil end
-
-    -- Rebuild buttons
-    for _, cp in ipairs(checkpoints) do
-        local button = CheckpointTab:CreateButton({
-            Name = "Checkpoint (Y: " .. math.floor(cp.pos.Y) .. ")",
-            Callback = function()
-                if Character and Character:FindFirstChild("HumanoidRootPart") then
-                    Character:MoveTo(cp.pos + Vector3.new(0,5,0))
-                end
-            end
-        })
-        table.insert(checkpointButtons, button)
-    end
-
-    -- Finish line = highest checkpoint
-    if #checkpoints > 0 then
-        local top = checkpoints[#checkpoints]
-        finishButton = CheckpointTab:CreateButton({
-            Name = "🏁 Finish Line (Y: " .. math.floor(top.pos.Y) .. ")",
-            Callback = function()
-                if Character and Character:FindFirstChild("HumanoidRootPart") then
-                    Character:MoveTo(top.pos + Vector3.new(0,10,0))
-                end
-            end
-        })
+local function save_to_file()
+    if writefile then
+        pcall(function()
+            writefile(SAVE_FILE, HttpService:JSONEncode(saved_list))
+        end)
     end
 end
 
--- Scan checkpoints when streamed in
-workspace.DescendantAdded:Connect(function(obj)
-    task.wait(0.2)
-    if obj:IsA("BasePart") then
-        local lname = obj.Name:lower()
-        if lname:find("checkpoint") or lname:find("flag") or lname:find("stage") or lname:find("goal") or lname:find("line") or lname:find("end") then
-            registerCheckpoint(obj, obj.Position)
+local function load_from_file()
+    if isfile then
+        local ok, data = pcall(readfile, SAVE_FILE)
+        if ok and data then
+            local succ, dec = pcall(function() return HttpService:JSONDecode(data) end)
+            if succ and type(dec) == "table" then saved_list = dec end
         end
-    elseif obj:IsA("Model") then
-        local lname = obj.Name:lower()
-        if lname:find("checkpoint") or lname:find("flag") or lname:find("stage") or lname:find("goal") or lname:find("line") or lname:find("end") then
-            local primary = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
-            if primary then
-                registerCheckpoint(obj, primary.Position)
+    end
+end
+
+local function vecFromTable(t)
+    if typeof(t) == "Vector3" then return t end
+    return Vector3.new(t.X or 0, t.Y or 0, t.Z or 0)
+end
+
+local function makeKey(pos)
+    return math.floor(pos.X / DEDUPE_TOL) .. "_" .. math.floor(pos.Y / DEDUPE_TOL) .. "_" .. math.floor(pos.Z / DEDUPE_TOL)
+end
+
+-- Safe teleport (raycast down from above to place you on ground)
+local function safeTeleport(pos)
+    if not Character or not Character:FindFirstChild("HumanoidRootPart") then return end
+    local hrp = Character.HumanoidRootPart
+    local origin = pos + Vector3.new(0, 160, 0)
+    local dir = Vector3.new(0, -400, 0)
+    local params = RaycastParams.new()
+    params.FilterDescendantsInstances = { Character }
+    params.FilterType = Enum.RaycastFilterType.Blacklist
+
+    local res = workspace:Raycast(origin, dir, params)
+    if res and res.Position then
+        local target = res.Position + Vector3.new(0, 4, 0)
+        hrp.CFrame = CFrame.new(target)
+        hrp.Velocity = Vector3.new(0,0,0)
+        return
+    end
+
+    -- fallback smaller ray
+    local res2 = workspace:Raycast(pos + Vector3.new(0,50,0), Vector3.new(0,-200,0), params)
+    if res2 and res2.Position then
+        local target = res2.Position + Vector3.new(0, 4, 0)
+        hrp.CFrame = CFrame.new(target)
+        hrp.Velocity = Vector3.new(0,0,0)
+        return
+    end
+
+    -- final fallback: place slightly above
+    hrp.CFrame = CFrame.new(pos + Vector3.new(0,6,0))
+    hrp.Velocity = Vector3.new(0,0,0)
+end
+
+-- UI rebuild (debounced)
+local ui_debounce = false
+local function rebuildCheckpointUI()
+    if ui_debounce then return end
+    ui_debounce = true
+    task.spawn(function()
+        task.wait(0.25)
+        -- destroy old buttons safely
+        for _, b in ipairs(checkpoint_buttons) do pcall(function() if b and b.Destroy then b:Destroy() end end) end
+        checkpoint_buttons = {}
+
+        -- build sorted array lowest -> highest
+        local arr = {}
+        for _, v in pairs(checkpoints_map) do table.insert(arr, v) end
+        table.sort(arr, function(a,b) return a.pos.Y < b.pos.Y end)
+
+        for idx, cp in ipairs(arr) do
+            local ok, btn = pcall(function()
+                return CheckpointTab:CreateButton({
+                    Name = ("Checkpoint %d | %s (Y:%d)"):format(idx, cp.name, math.floor(cp.pos.Y)),
+                    Callback = function()
+                        safeTeleport(cp.pos)
+                    end
+                })
+            end)
+            if ok and btn then table.insert(checkpoint_buttons, btn) end
+        end
+
+        -- finish line button (highest)
+        if #arr > 0 then
+            pcall(function() 
+                local top = arr[#arr]
+                local okf, fbtn = pcall(function()
+                    return CheckpointTab:CreateButton({
+                        Name = ("🏁 Finish Line (Y:%d)"):format(math.floor(top.pos.Y)),
+                        Callback = function() safeTeleport(top.pos + Vector3.new(0,10,0)) end
+                    })
+                end)
+                if okf and fbtn then table.insert(checkpoint_buttons, fbtn) end
+            end)
+        end
+
+        -- label
+        pcall(function() CheckpointTab:CreateLabel("Found " .. tostring(#arr) .. " checkpoints") end)
+
+        ui_debounce = false
+    end)
+end
+
+-- register and persist
+local function registerCheckpoint(obj, pos)
+    if not pos then return end
+    local key = makeKey(pos)
+    if checkpoints_map[key] then return end
+    checkpoints_map[key] = { name = tostring(obj.Name or "Checkpoint"), pos = pos }
+
+    -- persist if not already saved
+    local found = false
+    for _, s in ipairs(saved_list) do
+        local sk = makeKey(vecFromTable(s.pos))
+        if sk == key then found = true; break end
+    end
+    if not found then
+        table.insert(saved_list, { name = obj.Name or "Checkpoint", pos = { X = pos.X, Y = pos.Y, Z = pos.Z } })
+        save_to_file()
+    end
+
+    print(("✅ Registered checkpoint: %s  Y=%d"):format(pcall(function() return obj:GetFullName() end) and obj:GetFullName() or tostring(obj), math.floor(pos.Y)))
+    rebuildCheckpointUI()
+end
+
+-- candidate detection (only "checkpoint" name, ignores medkit/kotak/aqua)
+local function isCandidate(obj)
+    local name = (obj.Name or ""):lower()
+    if name:find("medkit") or name:find("kotak") or name:find("aqua") then return false end
+    if name:find("checkpoint") then return true end
+    -- also check GUIs inside for the text "checkpoint" (handles labeled models)
+    for _, d in ipairs(obj:GetDescendants()) do
+        if d:IsA("BillboardGui") or d:IsA("SurfaceGui") then
+            for _, g in ipairs(d:GetDescendants()) do
+                if (g:IsA("TextLabel") or g:IsA("TextButton") or g:IsA("TextBox")) and type(g.Text) == "string" then
+                    if string.match(string.lower(g.Text), "check ?point") then return true end
+                end
             end
+        end
+    end
+    return false
+end
+
+local function getPosFrom(obj)
+    if obj:IsA("BasePart") then return obj.Position end
+    if obj:IsA("Model") then
+        if obj.PrimaryPart then return obj.PrimaryPart.Position end
+        local found = obj:FindFirstChildWhichIsA("BasePart", true)
+        if found then return found.Position end
+    end
+    return nil
+end
+
+-- load saved file and register them initially
+load_from_file()
+for _, s in ipairs(saved_list) do
+    if s and s.pos then
+        local p = vecFromTable(s.pos)
+        registerCheckpoint({ Name = s.name or "SavedCP", GetFullName = function() return "SavedCheckpoint" end }, p)
+    end
+end
+
+-- initial quick scan for already streamed-in checkpoints (lightweight)
+pcall(function()
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if isCandidate(obj) then
+            local pos = getPosFrom(obj)
+            if pos then registerCheckpoint(obj, pos) end
         end
     end
 end)
 
--- Initial scan
-for _, obj in pairs(workspace:GetDescendants()) do
-    if obj:IsA("BasePart") then
-        local lname = obj.Name:lower()
-        if lname:find("checkpoint") or lname:find("flag") or lname:find("stage") or lname:find("goal") or lname:find("line") or lname:find("end") then
-            registerCheckpoint(obj, obj.Position)
-        end
-    elseif obj:IsA("Model") then
-        local lname = obj.Name:lower()
-        if lname:find("checkpoint") or lname:find("flag") or lname:find("stage") or lname:find("goal") or lname:find("line") or lname:find("end") then
-            local primary = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
-            if primary then
-                registerCheckpoint(obj, primary.Position)
+-- listen for streamed-in/new objects
+Workspace.DescendantAdded:Connect(function(obj)
+    task.wait(0.12)
+    if isCandidate(obj) then
+        local pos = getPosFrom(obj)
+        if pos then registerCheckpoint(obj, pos) return end
+    end
+    -- sometimes the whole container (model) is added later; check parent
+    local par = obj.Parent
+    if par and isCandidate(par) then
+        local pos = getPosFrom(par)
+        if pos then registerCheckpoint(par, pos) end
+    end
+end)
+
+-- manual utilities inside tab
+CheckpointTab:CreateButton({
+    Name = "Re-scan Visible Workspace",
+    Callback = function()
+        for _, obj in ipairs(Workspace:GetDescendants()) do
+            if isCandidate(obj) then
+                local p = getPosFrom(obj)
+                if p then registerCheckpoint(obj, p) end
             end
         end
+        Rayfield:Notify({ Title = "CowHub", Content = "Rescan done", Duration = 2 })
     end
-end
+})
 
-----------------------------------------------------------------------
--- Movement Tab
-----------------------------------------------------------------------
+CheckpointTab:CreateButton({
+    Name = "Clear Saved Checkpoints",
+    Callback = function()
+        checkpoints_map = {}; saved_list = {}; pcall(function() if isfile and isfile(SAVE_FILE) then pcall(delfile, SAVE_FILE) end end)
+        rebuildCheckpointUI()
+        Rayfield:Notify({ Title = "CowHub", Content = "Cleared saved checkpoints", Duration = 2 })
+    end
+})
+
+-- ============================
+-- Movement Tab (WalkSpeed / Fly / Noclip)
+-- ============================
 local MovementTab = Window:CreateTab("Movement", 4483362458)
 MovementTab:CreateSection("Movement Settings")
 
 MovementTab:CreateSlider({
     Name = "WalkSpeed",
-    Range = {16,100},
+    Range = {16, 200},
     Increment = 1,
     CurrentValue = 16,
-    Callback = function(v) Humanoid.WalkSpeed = v end
+    Callback = function(v)
+        if Humanoid and Humanoid.Parent then pcall(function() Humanoid.WalkSpeed = v end) end
+    end
 })
 
 -- Fly
-local flying, flyConnection = false, nil
+local flying = false
+local flyConn
 MovementTab:CreateToggle({
     Name = "Fly",
     CurrentValue = false,
-    Callback = function(v)
-        flying = v
-        local hrp = Character:FindFirstChild("HumanoidRootPart")
-        if not hrp then return end
+    Callback = function(val)
+        flying = val
+        local uis = game:GetService("UserInputService")
+        local rs = game:GetService("RunService")
         if flying then
-            flyConnection = game:GetService("RunService").Heartbeat:Connect(function()
-                local uis = game:GetService("UserInputService")
+            flyConn = rs.Heartbeat:Connect(function()
+                if not Character or not Character:FindFirstChild("HumanoidRootPart") then return end
+                local hrp = Character.HumanoidRootPart
                 local dir = Vector3.new()
-                if uis:IsKeyDown(Enum.KeyCode.W) then dir = dir+Vector3.new(0,0,-1) end
-                if uis:IsKeyDown(Enum.KeyCode.S) then dir = dir+Vector3.new(0,0,1) end
-                if uis:IsKeyDown(Enum.KeyCode.A) then dir = dir+Vector3.new(-1,0,0) end
-                if uis:IsKeyDown(Enum.KeyCode.D) then dir = dir+Vector3.new(1,0,0) end
-                if uis:IsKeyDown(Enum.KeyCode.Space) then dir = dir+Vector3.new(0,1,0) end
-                if uis:IsKeyDown(Enum.KeyCode.LeftControl) then dir = dir+Vector3.new(0,-1,0) end
-                hrp.Velocity = (hrp.CFrame.LookVector*dir.Z + hrp.CFrame.RightVector*dir.X + Vector3.new(0,dir.Y,0))*50
+                if uis:IsKeyDown(Enum.KeyCode.W) then dir = dir + Vector3.new(0,0,-1) end
+                if uis:IsKeyDown(Enum.KeyCode.S) then dir = dir + Vector3.new(0,0,1) end
+                if uis:IsKeyDown(Enum.KeyCode.A) then dir = dir + Vector3.new(-1,0,0) end
+                if uis:IsKeyDown(Enum.KeyCode.D) then dir = dir + Vector3.new(1,0,0) end
+                if uis:IsKeyDown(Enum.KeyCode.Space) then dir = dir + Vector3.new(0,1,0) end
+                if uis:IsKeyDown(Enum.KeyCode.LeftControl) then dir = dir + Vector3.new(0,-1,0) end
+                hrp.Velocity = (hrp.CFrame.LookVector * dir.Z + hrp.CFrame.RightVector * dir.X + Vector3.new(0, dir.Y, 0)) * 60
             end)
         else
-            if flyConnection then flyConnection:Disconnect() flyConnection=nil end
-            hrp.Velocity = Vector3.new()
+            if flyConn then flyConn:Disconnect(); flyConn = nil end
+            if Character and Character:FindFirstChild("HumanoidRootPart") then
+                Character.HumanoidRootPart.Velocity = Vector3.new(0,0,0)
+            end
         end
     end
 })
 
 -- Noclip
-local noclip, noclipConnection = false, nil
+local noclip = false
+local noclipConn
 MovementTab:CreateToggle({
     Name = "Noclip",
     CurrentValue = false,
-    Callback = function(v)
-        noclip = v
+    Callback = function(val)
+        noclip = val
+        local rs = game:GetService("RunService")
         if noclip then
-            noclipConnection = game:GetService("RunService").Stepped:Connect(function()
+            noclipConn = rs.Stepped:Connect(function()
                 if Character then
-                    for _, p in pairs(Character:GetChildren()) do
-                        if p:IsA("BasePart") then p.CanCollide=false end
+                    for _, part in ipairs(Character:GetDescendants()) do
+                        if part:IsA("BasePart") then pcall(function() part.CanCollide = false end) end
                     end
                 end
             end)
         else
-            if noclipConnection then noclipConnection:Disconnect() noclipConnection=nil end
+            if noclipConn then noclipConn:Disconnect(); noclipConn = nil end
             if Character then
-                for _, p in pairs(Character:GetChildren()) do
-                    if p:IsA("BasePart") then p.CanCollide=true end
+                for _, part in ipairs(Character:GetDescendants()) do
+                    if part:IsA("BasePart") then pcall(function() part.CanCollide = true end) end
                 end
             end
         end
