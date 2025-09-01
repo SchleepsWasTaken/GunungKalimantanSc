@@ -116,7 +116,7 @@ local function updatePlayerPositions()
                 end)
                 if ok and newBtn then
                     btn:Destroy()
-                    playerButtons[plr] = newBtn
+                    playerButtons[plr] = btn
                     for i, oldBtn in ipairs(playerUI) do
                         if oldBtn == btn then
                             table.remove(playerUI, i)
@@ -231,9 +231,9 @@ local function safeSummitTeleport(targetPos)
     for i = 1, steps do
         local newPos = Vector3.new(targetPos.X, currentPos.Y + (stepHeight * i), targetPos.Z)
         hrp.CFrame = CFrame.new(newPos)
-        task.wait(0.5) -- Pause 0.5 seconds between steps to simulate natural movement
+        task.wait(0.6) -- Slightly longer pause to reduce detection risk
     end
-    -- Use safeTeleport at the end to prevent falling
+    -- Use safeTeleport at the end to ensure safe landing
     safeTeleport(targetPos)
     Rayfield:Notify({ Title = "CowHub", Content = "Reached summit safely", Duration = 2 })
 end
@@ -272,8 +272,8 @@ local function rebuildCheckpointUI()
             local top = arr[#arr]
             local okf, fbtn = pcall(function()
                 return CheckpointTab:CreateButton({
-                    Name = ("🏁 Finish Line (Y:%d)"):format(math.floor(top.pos.Y)),
-                    Callback = function() safeTeleport(top.pos + Vector3.new(0, 20, 0)) end
+                    Name = ("🏁 Finish Line (Y:%d)"):format(math.floor(top.pos.Y + 30)),
+                    Callback = function() safeTeleport(top.pos + Vector3.new(0, 30, 0)) end
                 })
             end)
             if okf and fbtn then table.insert(checkpoint_buttons, fbtn) end
@@ -398,7 +398,7 @@ local function performAutoTeleport()
         return
     end
     local bottom = arr[1].pos
-    local summit = arr[#arr].pos + Vector3.new(0, 20, 0)
+    local summit = arr[#arr].pos + Vector3.new(0, 30, 0) -- Increased Y-offset to avoid ground
     -- Simulate walk to summit
     safeSummitTeleport(summit)
     task.wait(5) -- Wait 5 seconds at summit
