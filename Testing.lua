@@ -1,5 +1,5 @@
 -- 🐄 CowHub | Gunung Kalimantan — Fixed Full Script
--- Features: Players (live, real-time Y, no stacking), Checkpoints (stream-safe, dedupe, saved), Movement (WalkSpeed/Fly/Noclip)
+-- Features: Players (live, real-time Y, no stacking), Checkpoints (stream-safe, dedupe, saved), Movement (WalkSpeed/Fly/Noclip), Auto Teleport
 
 -- Load Rayfield
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
@@ -29,7 +29,9 @@ LocalPlayer.CharacterAdded:Connect(function(ch) Character = ch; Humanoid = ch:Wa
 local PlayerTab = Window:CreateTab("Players", 4483362458)
 local refreshButton = PlayerTab:CreateButton({
     Name = "Refresh Players",
-    Callback = refreshPlayerList
+    Callback = function()
+        refreshPlayerList() -- Ensure function is called correctly
+    end
 })
 PlayerTab:CreateLabel("") -- Padding after refresh button
 local playerButtons = {} -- Map player to button for real-time updates
@@ -154,7 +156,6 @@ end
 local function makeKey(pos)
     return math.floor(pos.X / DEDUPE_TOL) .. "_" .. math.floor(pos.Y / DEDUPE_TOL) .. "_" .. math.floor(pos.Z / DEDUPE_TOL)
 end
--- Fix for makeKey (corrected from your version with missing separators)
 -- Safe teleport (raycast down to find ground)
 local function safeTeleport(pos)
     if not Character or not Character:FindFirstChild("HumanoidRootPart") then return end
@@ -398,6 +399,59 @@ MovementTab:CreateToggle({
                     if part:IsA("BasePart") then pcall(function() part.CanCollide = true end) end
                 end
             end
+        end
+    end
+})
+
+-- ============================
+-- Auto Teleport Mode
+-- ============================
+local autoActive = false
+local timer = 300 -- 5 minutes in seconds
+local autoConn
+local countdownLabel = CheckpointTab:CreateLabel("Auto Teleport Off")
+local isPerforming = false
+
+local function performAutoTeleport()
+    local arr = getSortedCheckpoints()
+    if #arr < 2 then
+        Rayfield:Notify({ Title = "CowHub", Content = "Not enough checkpoints (need at least 2)", Duration = 3 })
+        return
+    end
+    local bottom = arr[1].pos
+    local summit = arr[#arr].pos + Vector3.new(0, 30, 0) -- Match manual teleport offset
+    safeTeleport(summit)
+    Rayfield:Notify({ Title = "CowHub", Content = "Reached summit safely", Duration = 2 })
+    task.wait(5) -- Wait 5 seconds at summit
+    safeTeleport(bottom)
+    Rayfield:Notify({ Title = "CowHub", Content = "Back to bottom, resetting timer", Duration = 2 })
+end
+
+CheckpointTab:CreateToggle({
+    Name = "Auto Teleport",
+    CurrentValue = false,
+    Callback = function(val)
+        autoActive = val
+        if val then
+            timer = 300
+            autoConn = RunService.Heartbeat:Connect(function(dt)
+                if not autoActive or isPerforming then return end
+                timer = timer - dt
+                if timer <= 0 then
+                    isPerforming = true
+                    performAutoTeleport()
+                    timer = 300 -- Reset timer after cycle
+                    isPerforming = false
+                end
+                -- Update label
+                local min = math.floor(timer / 60)
+                local sec = math.floor(timer % 60)
+                countdownLabel:Set("Time until next TP: " .. min .. ":" .. string.format("%02d", sec))
+            end)
+        else
+            if autoConn then autoConn:Disconnect(); autoConn = nil end
+            timer = 300
+            countdownLabel:Set("Auto Teleport Off")
         end
     end
 })
