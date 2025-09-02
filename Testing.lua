@@ -27,7 +27,6 @@ local PlayerTab = Window:CreateTab("Players", 4483362458)
 PlayerTab:CreateSection("Teleport to Players")
 local playerUI = {} -- Store Rayfield button objects
 local rebuildDebounce = false
-local updateDebounce = false
 local playerButtons = {} -- Map player to button for real-time updates
 
 local function safeTeleportToPlayer(plr)
@@ -87,85 +86,10 @@ local function rebuildPlayers()
     rebuildDebounce = false
 end
 
--- Real-time Y-position update
-local function updatePlayerPositions()
-    if updateDebounce then return end
-    updateDebounce = true
-
-    -- Update existing buttons
-    for plr, btn in pairs(playerButtons) do
-        if plr and btn then
-            local yPos = "?"
-            if plr.Character then
-                local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
-                if hrp then
-                    yPos = math.floor(hrp.Position.Y)
-                else
-                    for _, part in ipairs(plr.Character:GetChildren()) do
-                        if part:IsA("BasePart") then
-                            yPos = math.floor(part.Position.Y)
-                            break
-                        end
-                    end
-                end
-            end
-            local newName = plr.Name .. " (Y:" .. yPos .. ")"
-            pcall(function() btn:Set({ Name = newName }) end)
-        end
-    end
-
-    -- Remove buttons for players no longer in game
-    local currentPlayers = Players:GetPlayers()
-    for plr, btn in pairs(playerButtons) do
-        if not table.find(currentPlayers, plr) then
-            pcall(function() if btn and btn.Destroy then btn:Destroy() end end)
-            playerButtons[plr] = nil
-            for i, b in ipairs(playerUI) do
-                if b == btn then
-                    table.remove(playerUI, i)
-                    break
-                end
-            end
-        end
-    end
-
-    -- Add buttons for new players
-    for _, plr in ipairs(currentPlayers) do
-        if plr ~= LocalPlayer and not playerButtons[plr] then
-            local yPos = "?"
-            if plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
-                yPos = math.floor(plr.Character.HumanoidRootPart.Position.Y)
-            elseif plr.Character then
-                for _, part in ipairs(plr.Character:GetChildren()) do
-                    if part:IsA("BasePart") then
-                        yPos = math.floor(part.Position.Y)
-                        break
-                    end
-                end
-            end
-            local buttonName = plr.Name .. " (Y:" .. yPos .. ")"
-            local ok, btn = pcall(function()
-                return PlayerTab:CreateButton({
-                    Name = buttonName,
-                    Callback = function()
-                        safeTeleportToPlayer(plr)
-                    end
-                })
-            end)
-            if ok and btn then
-                table.insert(playerUI, btn)
-                playerButtons[plr] = btn
-            end
-        end
-    end
-
-    updateDebounce = false
-end
-
--- Start real-time update loop
+-- Start real-time update loop by rebuilding every 1 second
 RunService.RenderStepped:Connect(function()
-    task.wait(1) -- Update every 1 second to reduce UI lag
-    updatePlayerPositions()
+    task.wait(1) -- Update every 1 second
+    rebuildPlayers()
 end)
 
 -- Refresh players with debounced events
@@ -530,12 +454,4 @@ MovementTab:CreateToggle({
                 end
             end)
         else
-            if noclipConn then noclipConn:Disconnect(); noclipConn = nil end
-            if Character then
-                for _, part in ipairs(Character:GetDescendants()) do
-                    if part:IsA("BasePart") then pcall(function() part.CanCollide = true end) end
-                end
-            end
-        end
-    end
-})
+            if n
