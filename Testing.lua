@@ -25,8 +25,6 @@ LocalPlayer.CharacterAdded:Connect(function(ch) Character = ch; Humanoid = ch:Wa
 -- ============================
 local PlayerTab = Window:CreateTab("Players", 4483362458)
 PlayerTab:CreateSection("Teleport to Players")
-local playerUI = {} -- Store Rayfield button objects
-local rebuildDebounce = false
 local playerButtons = {} -- Map player to button for real-time updates
 
 local function safeTeleportToPlayer(plr)
@@ -43,25 +41,49 @@ local function safeTeleportToPlayer(plr)
     end
 end
 
-local function rebuildPlayers()
-    if rebuildDebounce then return end
-    rebuildDebounce = true
-
-    -- Clear all existing buttons
-    for _, b in ipairs(playerUI) do
-        pcall(function() if b and b.Destroy then b:Destroy() end end)
+local function addPlayerButton(plr)
+    if plr == LocalPlayer or playerButtons[plr] then return end
+    local yPos = "?"
+    if plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+        yPos = math.floor(plr.Character.HumanoidRootPart.Position.Y)
+    elseif plr.Character then
+        for _, part in ipairs(plr.Character:GetChildren()) do
+            if part:IsA("BasePart") then
+                yPos = math.floor(part.Position.Y)
+                break
+            end
+        end
     end
-    playerUI = {}
-    playerButtons = {}
+    local buttonName = plr.Name .. " (Y:" .. yPos .. ")"
+    local ok, btn = pcall(function()
+        return PlayerTab:CreateButton({
+            Name = buttonName,
+            Callback = function()
+                safeTeleportToPlayer(plr)
+            end
+        })
+    end)
+    if ok and btn then
+        playerButtons[plr] = btn
+    end
+end
 
-    -- Create buttons for current players
-    local players = Players:GetPlayers()
-    for _, plr in ipairs(players) do
-        if plr ~= LocalPlayer then
-            local yPos = "?"
-            if plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
-                yPos = math.floor(plr.Character.HumanoidRootPart.Position.Y)
-            elseif plr.Character then
+local function removePlayerButton(plr)
+    local btn = playerButtons[plr]
+    if btn then
+        pcall(function() if btn and btn.Destroy then btn:Destroy() end end)
+        playerButtons[plr] = nil
+    end
+end
+
+local function updatePlayerButtons()
+    for plr, btn in pairs(playerButtons) do
+        local yPos = "?"
+        if plr.Character then
+            local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                yPos = math.floor(hrp.Position.Y)
+            else
                 for _, part in ipairs(plr.Character:GetChildren()) do
                     if part:IsA("BasePart") then
                         yPos = math.floor(part.Position.Y)
@@ -69,50 +91,47 @@ local function rebuildPlayers()
                     end
                 end
             end
-            local buttonName = plr.Name .. " (Y:" .. yPos .. ")"
-            local ok, btn = pcall(function()
-                return PlayerTab:CreateButton({
-                    Name = buttonName,
-                    Callback = function()
-                        safeTeleportToPlayer(plr)
-                    end
-                })
-            end)
-            if ok and btn then
-                table.insert(playerUI, btn)
-                playerButtons[plr] = btn
-            end
         end
+        local newName = plr.Name .. " (Y:" .. yPos .. ")"
+        pcall(function() btn:Set({ Name = newName }) end)
     end
-    print("Rebuilt player UI with " .. #playerUI .. " buttons for " .. (#players - 1) .. " players")
-    rebuildDebounce = false
 end
 
--- Update every 2 seconds
-RunService.RenderStepped:Connect(function()
-    task.wait(2) -- Update every 2 seconds
-    rebuildPlayers()
-end)
+-- Initial load
+for _, plr in ipairs(Players:GetPlayers()) do
+    addPlayerButton(plr)
+end
 
--- Rebuild on player join/leave
+-- Events
 Players.PlayerAdded:Connect(function(plr)
     task.wait(0.5)
-    rebuildPlayers()
-    plr.CharacterAppearanceLoaded:Connect(function()
-        task.wait(0.5)
-        rebuildPlayers()
-    end)
+    addPlayerButton(plr)
 end)
-Players.PlayerRemoving:Connect(function()
-    task.wait(0.5)
-    rebuildPlayers()
+Players.PlayerRemoving:Connect(function(plr)
+    removePlayerButton(plr)
+end)
+
+-- Periodic update for Y-positions
+local updateConnection = RunService.Heartbeat:Connect(function()
+    updatePlayerButtons()
 end)
 
 PlayerTab:CreateButton({
     Name = "Refresh Players",
-    Callback = rebuildPlayers
+    Callback = function()
+        local currentPlayers = Players:GetPlayers()
+        -- Remove any buttons for non-existent players
+        for plr, _ in pairs(playerButtons) do
+            if not table.find(currentPlayers, plr) then
+                removePlayerButton(plr)
+            end
+        end
+        -- Add missing players
+        for _, plr in ipairs(currentPlayers) do
+            addPlayerButton(plr)
+        end
+    end
 })
-rebuildPlayers()
 -- ============================
 -- Checkpoints Tab (robust)
 -- ============================
@@ -174,7 +193,7 @@ local function safeTeleport(pos)
         hrp.Velocity = Vector3.new(0, 0, 0)
         return
     end
-    hrp.CFrame = CFrame.new(pos + Vector3.new(0, 6, 0))
+    hrp.CFrame = CFrame.new(pos + Vector3.new(0, 6, 0)
     hrp.Velocity = Vector3.new(0, 0, 0)
 end
 -- Safe summit teleport with delay (simulated walk)
