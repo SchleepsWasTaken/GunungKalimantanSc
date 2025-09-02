@@ -454,4 +454,12 @@ MovementTab:CreateToggle({
                 end
             end)
         else
-            if n
+            if noclipConn then noclipConn:Disconnect(); noclipConn = nil end
+            if Character then
+                for _, part in ipairs(Character:GetDescendants()) do
+                    if part:IsA("BasePart") then pcall(function() part.CanCollide = true end) end
+                end
+            end
+        end
+    end
+})
