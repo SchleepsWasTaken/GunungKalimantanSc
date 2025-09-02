@@ -116,7 +116,7 @@ local function updatePlayerPositions()
                 end)
                 if ok and newBtn then
                     btn:Destroy()
-                    playerButtons[plr] = btn
+                    playerButtons[plr] = newBtn
                     for i, oldBtn in ipairs(playerUI) do
                         if oldBtn == btn then
                             table.remove(playerUI, i)
@@ -398,9 +398,10 @@ local function performAutoTeleport()
         return
     end
     local bottom = arr[1].pos
-    local summit = arr[#arr].pos + Vector3.new(0, 30, 0) -- Increased Y-offset to avoid ground
-    -- Simulate walk to summit
-    safeSummitTeleport(summit)
+    local summit = arr[#arr].pos + Vector3.new(0, 30, 0) -- Match manual teleport offset
+    -- Teleport to summit using safeTeleport directly
+    safeTeleport(summit)
+    Rayfield:Notify({ Title = "CowHub", Content = "Reached summit safely", Duration = 2 })
     task.wait(5) -- Wait 5 seconds at summit
     -- Teleport back to bottom
     safeTeleport(bottom)
