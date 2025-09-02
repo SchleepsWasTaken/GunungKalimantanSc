@@ -41,35 +41,18 @@ local function safeTeleportToPlayer(plr)
     end
 end
 
-local function getPlayerYPosition(plr)
-    local yPos = "?"
-    if plr and plr.Character then
-        local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
-        if hrp then
-            yPos = math.floor(hrp.Position.Y)
-        else
-            for _, part in ipairs(plr.Character:GetChildren()) do
-                if part:IsA("BasePart") then
-                    yPos = math.floor(part.Position.Y)
-                    break
-                end
-            end
-        end
-    end
-    return yPos
-end
-
 local function addPlayerButton(plr)
     if not plr or plr == LocalPlayer then return end
-    -- Check for existing button with same username and remove it
-    for existingPlr, btn in pairs(playerButtons) do
-        if existingPlr and existingPlr.Name == plr.Name then
-            pcall(function() if btn and btn.Destroy then btn:Destroy() end end)
-            playerButtons[existingPlr] = nil
-        end
+    -- Remove any existing button for the same player
+    if playerButtons[plr] then
+        pcall(function() if playerButtons[plr] and playerButtons[plr].Destroy then playerButtons[plr]:Destroy() end end)
+        playerButtons[plr] = nil
     end
-    -- Create new button
-    local yPos = getPlayerYPosition(plr)
+    -- Create new button with static Y-position (initial value)
+    local yPos = "?"
+    if plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+        yPos = math.floor(plr.Character.HumanoidRootPart.Position.Y)
+    end
     local buttonName = plr.Name .. " (Y:" .. yPos .. ")"
     local ok, btn = pcall(function()
         return PlayerTab:CreateButton({
@@ -81,53 +64,42 @@ local function addPlayerButton(plr)
     end)
     if ok and btn then
         playerButtons[plr] = btn
-        print("Added button for " .. plr.Name .. ", total buttons: " .. #playerButtons)
-    else
-        print("Failed to create button for " .. plr.Name)
+        print("Added button for " .. plr.Name .. ", total buttons: " .. table.getn(playerButtons))
     end
 end
 
 local function removePlayerButton(plr)
-    if not plr then return end
-    local btn = playerButtons[plr]
-    if btn then
-        pcall(function() if btn and btn.Destroy then btn:Destroy() end end)
-        playerButtons[plr] = nil
-        print("Removed button for " .. plr.Name .. ", total buttons: " .. #playerButtons)
-    end
+    if not plr or not playerButtons[plr] then return end
+    pcall(function() if playerButtons[plr] and playerButtons[plr].Destroy then playerButtons[plr]:Destroy() end end)
+    playerButtons[plr] = nil
+    print("Removed button for " .. plr.Name .. ", total buttons: " .. table.getn(playerButtons))
 end
 
 local function refreshPlayerList()
-    -- Clear all buttons
+    -- Clear all existing buttons
     for plr, btn in pairs(playerButtons) do
         pcall(function() if btn and btn.Destroy then btn:Destroy() end end)
         playerButtons[plr] = nil
     end
-    -- Rebuild for current players
-    local currentPlayers = Players:GetPlayers()
-    for _, plr in ipairs(currentPlayers) do
+    -- Add buttons for current players
+    for _, plr in ipairs(Players:GetPlayers()) do
         addPlayerButton(plr)
     end
-    print("Refreshed player UI with " .. #playerButtons .. " buttons for " .. (#currentPlayers - 1) .. " players")
+    print("Refreshed player UI with " .. table.getn(playerButtons) .. " buttons for " .. (#Players:GetPlayers() - 1) .. " players")
 end
 
 -- Initial load
-for _, plr in ipairs(Players:GetPlayers()) do
-    addPlayerButton(plr)
-end
+refreshPlayerList()
 
 -- Events
 Players.PlayerAdded:Connect(function(plr)
     task.wait(0.5)
-    addPlayerButton(plr)
-    plr.CharacterAppearanceLoaded:Connect(function()
-        task.wait(0.5)
-        addPlayerButton(plr) -- Update in case character loaded changes Y-position
-    end)
+    refreshPlayerList()
 end)
 Players.PlayerRemoving:Connect(function(plr)
     task.wait(0.5)
     removePlayerButton(plr)
+    refreshPlayerList()
 end)
 
 PlayerTab:CreateButton({
