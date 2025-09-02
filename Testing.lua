@@ -41,18 +41,26 @@ local function safeTeleportToPlayer(plr)
     end
 end
 
-local function addPlayerButton(plr)
-    if not plr or plr == LocalPlayer then return end
-    -- Remove any existing button for the same player
-    if playerButtons[plr] then
-        pcall(function() if playerButtons[plr] and playerButtons[plr].Destroy then playerButtons[plr]:Destroy() end end)
-        playerButtons[plr] = nil
-    end
-    -- Create new button with static Y-position (initial value)
+local function getPlayerYPosition(plr)
     local yPos = "?"
-    if plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+    if plr and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
         yPos = math.floor(plr.Character.HumanoidRootPart.Position.Y)
     end
+    return yPos
+end
+
+local function addPlayerButton(plr)
+    if not plr or plr == LocalPlayer then return end
+    -- Remove any existing button for the same player name
+    for existingPlr, btn in pairs(playerButtons) do
+        if existingPlr and existingPlr.Name == plr.Name then
+            pcall(function() if btn and btn.Destroy then btn:Destroy() end end)
+            playerButtons[existingPlr] = nil
+            print("Removed old button for " .. plr.Name)
+        end
+    end
+    -- Create new button with current Y-position
+    local yPos = getPlayerYPosition(plr)
     local buttonName = plr.Name .. " (Y:" .. yPos .. ")"
     local ok, btn = pcall(function()
         return PlayerTab:CreateButton({
@@ -64,7 +72,7 @@ local function addPlayerButton(plr)
     end)
     if ok and btn then
         playerButtons[plr] = btn
-        print("Added button for " .. plr.Name .. ", total buttons: " .. table.getn(playerButtons))
+        print("Added button for " .. plr.Name .. " (Y:" .. yPos .. "), total buttons: " .. table.getn(playerButtons))
     end
 end
 
@@ -94,12 +102,11 @@ refreshPlayerList()
 -- Events
 Players.PlayerAdded:Connect(function(plr)
     task.wait(0.5)
-    refreshPlayerList()
+    addPlayerButton(plr)
 end)
 Players.PlayerRemoving:Connect(function(plr)
     task.wait(0.5)
     removePlayerButton(plr)
-    refreshPlayerList()
 end)
 
 PlayerTab:CreateButton({
