@@ -88,6 +88,12 @@ local function rebuildPlayers()
     rebuildDebounce = false
 end
 
+-- Update every 2 seconds
+RunService.RenderStepped:Connect(function()
+    task.wait(2) -- Update every 2 seconds
+    rebuildPlayers()
+end)
+
 -- Rebuild on player join/leave
 Players.PlayerAdded:Connect(function(plr)
     task.wait(0.5)
