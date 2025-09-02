@@ -1,5 +1,5 @@
--- 🐄 CowHub | Gunung Kalimantan — Fixed Full Script with Canvas
--- Features: Players (live, real-time Y, no stacking with canvas), Checkpoints, Movement
+-- 🐄 CowHub | Gunung Kalimantan — Fixed Full Script
+-- Features: Players (live, real-time Y, no stacking), Checkpoints (stream-safe, dedupe, saved), Movement (WalkSpeed/Fly/Noclip)
 
 -- Load Rayfield
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
@@ -154,6 +154,7 @@ end
 local function makeKey(pos)
     return math.floor(pos.X / DEDUPE_TOL) .. "_" .. math.floor(pos.Y / DEDUPE_TOL) .. "_" .. math.floor(pos.Z / DEDUPE_TOL)
 end
+-- Fix for makeKey (corrected from your version with missing separators)
 -- Safe teleport (raycast down to find ground)
 local function safeTeleport(pos)
     if not Character or not Character:FindFirstChild("HumanoidRootPart") then return end
@@ -171,7 +172,7 @@ local function safeTeleport(pos)
         return
     end
     local res2 = workspace:Raycast(pos + Vector3.new(0, 50, 0), Vector3.new(0, -200, 0), params)
-    if res2 and res.Position then
+    if res2 and res2.Position then
         local target = res2.Position + Vector3.new(0, 4, 0)
         hrp.CFrame = CFrame.new(target)
         hrp.Velocity = Vector3.new(0, 0, 0)
@@ -413,8 +414,8 @@ RunService.RenderStepped:Connect(function()
     for plr, btn in pairs(playerButtons) do
         if plr and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
             local yPos = math.floor(plr.Character.HumanoidRootPart.Position.Y)
-            if not playerYData[plr.Name] then playerYData[plr.Name] = { label: plr.Name, data: {} } end
-            table.insert(playerYData[plr.Name].data, { x: tick(), y: yPos })
+            if not playerYData[plr.Name] then playerYData[plr.Name] = { label = plr.Name, data = {} } end
+            table.insert(playerYData[plr.Name].data, { x = tick(), y = yPos })
             if #playerYData[plr.Name].data > 50 then table.remove(playerYData[plr.Name].data, 1) end
         end
     end
@@ -427,8 +428,8 @@ RunService.RenderStepped:Connect(function()
         options = {
             responsive = true,
             scales = {
-                x = { title: { display: true, text: "Time (s)" } },
-                y = { title: { display: true, text: "Y-Position" } }
+                x = { title = { display = true, text = "Time (s)" } },
+                y = { title = { display = true, text = "Y-Position" } }
             }
         }
     }
@@ -453,8 +454,8 @@ canvas.addChart("playerYChart", {
     options = {
         responsive = true,
         scales = {
-            x = { title: { display: true, text: "Time (s)" } },
-            y = { title: { display: true, text: "Y-Position" } }
+            x = { title = { display = true, text = "Time (s)" } },
+            y = { title = { display = true, text = "Y-Position" } }
         }
     }
 })
