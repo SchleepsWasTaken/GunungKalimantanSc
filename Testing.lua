@@ -32,28 +32,44 @@ local function safeTeleportToPlayer(plr)
         Rayfield:Notify({ Title = "CowHub", Content = "Your character is not loaded", Duration = 3 })
         return
     end
-    if plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+    if plr and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
         local targetPos = plr.Character.HumanoidRootPart.Position + Vector3.new(2, 0, 2)
         Character:MoveTo(targetPos)
         Rayfield:Notify({ Title = "CowHub", Content = "Teleported to " .. plr.Name, Duration = 2 })
     else
-        Rayfield:Notify({ Title = "CowHub", Content = "Failed to teleport to " .. plr.Name .. ": Player not loaded", Duration = 3 })
+        Rayfield:Notify({ Title = "CowHub", Content = "Failed to teleport to " .. (plr and plr.Name or "unknown") .. ": Player not loaded", Duration = 3 })
     end
 end
 
-local function addPlayerButton(plr)
-    if plr == LocalPlayer or playerButtons[plr] then return end
+local function getPlayerYPosition(plr)
     local yPos = "?"
-    if plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
-        yPos = math.floor(plr.Character.HumanoidRootPart.Position.Y)
-    elseif plr.Character then
-        for _, part in ipairs(plr.Character:GetChildren()) do
-            if part:IsA("BasePart") then
-                yPos = math.floor(part.Position.Y)
-                break
+    if plr and plr.Character then
+        local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            yPos = math.floor(hrp.Position.Y)
+        else
+            for _, part in ipairs(plr.Character:GetChildren()) do
+                if part:IsA("BasePart") then
+                    yPos = math.floor(part.Position.Y)
+                    break
+                end
             end
         end
     end
+    return yPos
+end
+
+local function addPlayerButton(plr)
+    if not plr or plr == LocalPlayer then return end
+    -- Check for existing button with same username and remove it
+    for existingPlr, btn in pairs(playerButtons) do
+        if existingPlr and existingPlr.Name == plr.Name then
+            pcall(function() if btn and btn.Destroy then btn:Destroy() end end)
+            playerButtons[existingPlr] = nil
+        end
+    end
+    -- Create new button
+    local yPos = getPlayerYPosition(plr)
     local buttonName = plr.Name .. " (Y:" .. yPos .. ")"
     local ok, btn = pcall(function()
         return PlayerTab:CreateButton({
@@ -65,36 +81,34 @@ local function addPlayerButton(plr)
     end)
     if ok and btn then
         playerButtons[plr] = btn
+        print("Added button for " .. plr.Name .. ", total buttons: " .. #playerButtons)
+    else
+        print("Failed to create button for " .. plr.Name)
     end
 end
 
 local function removePlayerButton(plr)
+    if not plr then return end
     local btn = playerButtons[plr]
     if btn then
         pcall(function() if btn and btn.Destroy then btn:Destroy() end end)
         playerButtons[plr] = nil
+        print("Removed button for " .. plr.Name .. ", total buttons: " .. #playerButtons)
     end
 end
 
-local function updatePlayerButtons()
+local function refreshPlayerList()
+    -- Clear all buttons
     for plr, btn in pairs(playerButtons) do
-        local yPos = "?"
-        if plr.Character then
-            local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
-            if hrp then
-                yPos = math.floor(hrp.Position.Y)
-            else
-                for _, part in ipairs(plr.Character:GetChildren()) do
-                    if part:IsA("BasePart") then
-                        yPos = math.floor(part.Position.Y)
-                        break
-                    end
-                end
-            end
-        end
-        local newName = plr.Name .. " (Y:" .. yPos .. ")"
-        pcall(function() btn:Set({ Name = newName }) end)
+        pcall(function() if btn and btn.Destroy then btn:Destroy() end end)
+        playerButtons[plr] = nil
     end
+    -- Rebuild for current players
+    local currentPlayers = Players:GetPlayers()
+    for _, plr in ipairs(currentPlayers) do
+        addPlayerButton(plr)
+    end
+    print("Refreshed player UI with " .. #playerButtons .. " buttons for " .. (#currentPlayers - 1) .. " players")
 end
 
 -- Initial load
@@ -106,31 +120,19 @@ end
 Players.PlayerAdded:Connect(function(plr)
     task.wait(0.5)
     addPlayerButton(plr)
+    plr.CharacterAppearanceLoaded:Connect(function()
+        task.wait(0.5)
+        addPlayerButton(plr) -- Update in case character loaded changes Y-position
+    end)
 end)
 Players.PlayerRemoving:Connect(function(plr)
+    task.wait(0.5)
     removePlayerButton(plr)
-end)
-
--- Periodic update for Y-positions
-local updateConnection = RunService.Heartbeat:Connect(function()
-    updatePlayerButtons()
 end)
 
 PlayerTab:CreateButton({
     Name = "Refresh Players",
-    Callback = function()
-        local currentPlayers = Players:GetPlayers()
-        -- Remove any buttons for non-existent players
-        for plr, _ in pairs(playerButtons) do
-            if not table.find(currentPlayers, plr) then
-                removePlayerButton(plr)
-            end
-        end
-        -- Add missing players
-        for _, plr in ipairs(currentPlayers) do
-            addPlayerButton(plr)
-        end
-    end
+    Callback = refreshPlayerList
 })
 -- ============================
 -- Checkpoints Tab (robust)
@@ -193,7 +195,7 @@ local function safeTeleport(pos)
         hrp.Velocity = Vector3.new(0, 0, 0)
         return
     end
-    hrp.CFrame = CFrame.new(pos + Vector3.new(0, 6, 0)
+    hrp.CFrame = CFrame.new(pos + Vector3.new(0, 6, 0))
     hrp.Velocity = Vector3.new(0, 0, 0)
 end
 -- Safe summit teleport with delay (simulated walk)
