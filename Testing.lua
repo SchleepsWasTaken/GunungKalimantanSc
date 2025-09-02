@@ -1,5 +1,5 @@
--- 🐄 CowHub | Gunung Kalimantan — Fixed Full Script
--- Features: Players (live, real-time Y, no stacking), Checkpoints (stream-safe, dedupe, saved), Movement (WalkSpeed/Fly/Noclip)
+-- 🐄 CowHub | Gunung Kalimantan — Fixed Full Script with Canvas
+-- Features: Players (live, real-time Y, no stacking with canvas), Checkpoints, Movement
 
 -- Load Rayfield
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
@@ -11,6 +11,7 @@ local Window = Rayfield:CreateWindow({
     Discord = { Enabled = false },
     KeySystem = false
 })
+
 -- Services & player refs
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
@@ -19,12 +20,18 @@ local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 local Humanoid = Character:WaitForChild("Humanoid")
+
 LocalPlayer.CharacterAdded:Connect(function(ch) Character = ch; Humanoid = ch:WaitForChild("Humanoid") end)
+
 -- ============================
 -- Players Tab (live, real-time Y, no stacking)
 -- ============================
 local PlayerTab = Window:CreateTab("Players", 4483362458)
-PlayerTab:CreateSection("Teleport to Players")
+local refreshButton = PlayerTab:CreateButton({
+    Name = "Refresh Players",
+    Callback = refreshPlayerList
+})
+PlayerTab:CreateLabel("") -- Padding after refresh button
 local playerButtons = {} -- Map player to button for real-time updates
 
 local function safeTeleportToPlayer(plr)
@@ -109,10 +116,6 @@ Players.PlayerRemoving:Connect(function(plr)
     removePlayerButton(plr)
 end)
 
-PlayerTab:CreateButton({
-    Name = "Refresh Players",
-    Callback = refreshPlayerList
-})
 -- ============================
 -- Checkpoints Tab (robust)
 -- ============================
@@ -168,7 +171,7 @@ local function safeTeleport(pos)
         return
     end
     local res2 = workspace:Raycast(pos + Vector3.new(0, 50, 0), Vector3.new(0, -200, 0), params)
-    if res2 and res2.Position then
+    if res2 and res.Position then
         local target = res2.Position + Vector3.new(0, 4, 0)
         hrp.CFrame = CFrame.new(target)
         hrp.Velocity = Vector3.new(0, 0, 0)
@@ -176,26 +179,6 @@ local function safeTeleport(pos)
     end
     hrp.CFrame = CFrame.new(pos + Vector3.new(0, 6, 0))
     hrp.Velocity = Vector3.new(0, 0, 0)
-end
--- Safe summit teleport with delay (simulated walk)
-local function safeSummitTeleport(targetPos)
-    if not Character or not Character:FindFirstChild("HumanoidRootPart") then
-        Rayfield:Notify({ Title = "CowHub", Content = "Your character is not loaded", Duration = 3 })
-        return
-    end
-    local hrp = Character.HumanoidRootPart
-    local currentPos = hrp.Position
-    local distance = (targetPos - currentPos).Magnitude
-    local steps = math.max(5, math.floor(distance / 50)) -- At least 5 steps, 50 studs per step
-    local stepHeight = (targetPos.Y - currentPos.Y) / steps
-    for i = 1, steps do
-        local newPos = Vector3.new(targetPos.X, currentPos.Y + (stepHeight * i), targetPos.Z)
-        hrp.CFrame = CFrame.new(newPos)
-        task.wait(0.6) -- Slightly longer pause to reduce detection risk
-    end
-    -- Use safeTeleport at the end to ensure safe landing
-    safeTeleport(targetPos)
-    Rayfield:Notify({ Title = "CowHub", Content = "Reached summit safely", Duration = 2 })
 end
 -- Get sorted checkpoints
 local function getSortedCheckpoints()
@@ -216,9 +199,7 @@ local function rebuildCheckpointUI()
         end
         checkpoint_buttons = {}
         CheckpointTab:CreateSection("Teleport to Checkpoints (Refreshed)")
-        local arr = {}
-        for _, v in pairs(checkpoints_map) do table.insert(arr, v) end
-        table.sort(arr, function(a, b) return a.pos.Y < b.pos.Y end)
+        local arr = getSortedCheckpoints()
         for idx, cp in ipairs(arr) do
             local ok, btn = pcall(function()
                 return CheckpointTab:CreateButton({
@@ -232,8 +213,8 @@ local function rebuildCheckpointUI()
             local top = arr[#arr]
             local okf, fbtn = pcall(function()
                 return CheckpointTab:CreateButton({
-                    Name = ("🏁 Finish Line (Y:%d)"):format(math.floor(top.pos.Y + 30)),
-                    Callback = function() safeTeleport(top.pos + Vector3.new(0, 30, 0)) end
+                    Name = ("🏁 Finish Line (Y:%d)"):format(math.floor(top.pos.Y)),
+                    Callback = function() safeTeleport(top.pos + Vector3.new(0, 5, 0)) end
                 })
             end)
             if okf and fbtn then table.insert(checkpoint_buttons, fbtn) end
@@ -252,7 +233,7 @@ local function registerCheckpoint(obj, pos)
         local saved_pos = vecFromTable(s.pos)
         if (saved_pos - pos).Magnitude < DEDUPE_TOL then
             checkpoints_map[key] = { name = s.name or tostring(obj.Name or "Checkpoint"), pos = pos }
-            print(("✅ Loaded saved checkpoint: %s Y=%d"):format(s.name or tostring(obj.Name), math.floor(pos.Y)))
+            print(("✅ Loaded saved checkpoint: %s  Y=%d"):format(s.name or tostring(obj.Name), math.floor(pos.Y)))
             rebuildCheckpointUI()
             return
         end
@@ -262,14 +243,14 @@ local function registerCheckpoint(obj, pos)
     checkpoints_map[key] = { name = name, pos = pos }
     table.insert(saved_list, { name = name, pos = { X = pos.X, Y = pos.Y, Z = pos.Z } })
     save_to_file()
-    print(("✅ Registered new checkpoint: %s Y=%d"):format(pcall(function() return obj:GetFullName() end) and obj:GetFullName() or tostring(obj), math.floor(pos.Y)))
+    print(("✅ Registered new checkpoint: %s  Y=%d"):format(pcall(function() return obj:GetFullName() end) and obj:GetFullName() or tostring(obj), math.floor(pos.Y)))
     rebuildCheckpointUI()
 end
 -- Candidate detection
 local function isCandidate(obj)
-    local name = (obj.Name or ""):lower()
-    if name:find("medkit") or name:find("kotak") or name:find("aqua") then return false end
-    if name:find("checkpoint") then return true end
+    local lowerName = obj.Name:lower()
+    if lowerName:find("medkit") or lowerName:find("kotak") or lowerName:find("aqua") then return false end
+    if lowerName:find("checkpoint") then return true end
     for _, d in ipairs(obj:GetDescendants()) do
         if d:IsA("BillboardGui") or d:IsA("SurfaceGui") then
             for _, g in ipairs(d:GetDescendants()) do
@@ -281,14 +262,19 @@ local function isCandidate(obj)
     end
     return false
 end
-local function getPosFrom(obj)
-    if obj:IsA("BasePart") then return obj.Position end
-    if obj:IsA("Model") then
-        if obj.PrimaryPart then return obj.PrimaryPart.Position end
-        local found = obj:FindFirstChildWhichIsA("BasePart", true)
-        if found then return found.Position end
+local function getCheckpointPosition(obj)
+    if obj:IsA("BasePart") then
+        return obj.Position
+    elseif obj:IsA("Model") and obj.PrimaryPart then
+        return obj.PrimaryPart.Position
+    elseif obj:IsA("Model") then
+        for _, child in pairs(obj:GetDescendants()) do
+            if child:IsA("BasePart") then
+                return child.Position
+            end
+        end
     end
-    return nil
+    return nil  -- No valid position
 end
 -- Load saved checkpoints
 load_from_file()
@@ -302,7 +288,7 @@ end
 pcall(function()
     for _, obj in ipairs(Workspace:GetDescendants()) do
         if isCandidate(obj) then
-            local pos = getPosFrom(obj)
+            local pos = getCheckpointPosition(obj)
             if pos then registerCheckpoint(obj, pos) end
         end
     end
@@ -311,12 +297,12 @@ end)
 Workspace.DescendantAdded:Connect(function(obj)
     task.wait(0.12)
     if isCandidate(obj) then
-        local pos = getPosFrom(obj)
+        local pos = getCheckpointPosition(obj)
         if pos then registerCheckpoint(obj, pos) return end
     end
     local par = obj.Parent
     if par and isCandidate(par) then
-        local pos = getPosFrom(par)
+        local pos = getCheckpointPosition(par)
         if pos then registerCheckpoint(par, pos) end
     end
 end)
@@ -326,7 +312,7 @@ CheckpointTab:CreateButton({
     Callback = function()
         for _, obj in ipairs(Workspace:GetDescendants()) do
             if isCandidate(obj) then
-                local p = getPosFrom(obj)
+                local p = getCheckpointPosition(obj)
                 if p then registerCheckpoint(obj, p) end
             end
         end
@@ -344,58 +330,6 @@ CheckpointTab:CreateButton({
     end
 })
 
--- Auto Teleport Feature
-local autoActive = false
-local timer = 300 -- 5 minutes in seconds
-local autoConn
-local countdownLabel = CheckpointTab:CreateLabel("Auto Teleport Off")
-local isPerforming = false
-
-local function performAutoTeleport()
-    local arr = getSortedCheckpoints()
-    if #arr < 2 then
-        Rayfield:Notify({ Title = "CowHub", Content = "Not enough checkpoints (need at least 2)", Duration = 3 })
-        return
-    end
-    local bottom = arr[1].pos
-    local summit = arr[#arr].pos + Vector3.new(0, 30, 0) -- Match manual teleport offset
-    -- Teleport to summit using safeTeleport directly
-    safeTeleport(summit)
-    Rayfield:Notify({ Title = "CowHub", Content = "Reached summit safely", Duration = 2 })
-    task.wait(5) -- Wait 5 seconds at summit
-    -- Teleport back to bottom
-    safeTeleport(bottom)
-    Rayfield:Notify({ Title = "CowHub", Content = "Back to bottom, resetting timer", Duration = 2 })
-end
-
-CheckpointTab:CreateToggle({
-    Name = "Auto Teleport",
-    CurrentValue = false,
-    Callback = function(val)
-        autoActive = val
-        if val then
-            timer = 300
-            autoConn = RunService.Heartbeat:Connect(function(dt)
-                if not autoActive or isPerforming then return end
-                timer = timer - dt
-                if timer <= 0 then
-                    isPerforming = true
-                    performAutoTeleport()
-                    timer = 300 -- Reset timer after cycle
-                    isPerforming = false
-                end
-                -- Update label
-                local min = math.floor(timer / 60)
-                local sec = math.floor(timer % 60)
-                countdownLabel:Set("Time until next TP: " .. min .. ":" .. string.format("%02d", sec))
-            end)
-        else
-            if autoConn then autoConn:Disconnect() autoConn = nil end
-            timer = 300
-            countdownLabel:Set("Auto Teleport Off")
-        end
-    end
-})
 -- ============================
 -- Movement Tab
 -- ============================
@@ -466,3 +400,71 @@ MovementTab:CreateToggle({
         end
     end
 })
+
+-- ============================
+-- Canvas Panel Integration
+-- ============================
+-- Open canvas panel
+local canvas = openCanvasPanel("CowHub Canvas", 600, 400)
+
+-- Chart for Player Y-Positions
+local playerYData = {}
+RunService.RenderStepped:Connect(function()
+    for plr, btn in pairs(playerButtons) do
+        if plr and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+            local yPos = math.floor(plr.Character.HumanoidRootPart.Position.Y)
+            if not playerYData[plr.Name] then playerYData[plr.Name] = { label: plr.Name, data: {} } end
+            table.insert(playerYData[plr.Name].data, { x: tick(), y: yPos })
+            if #playerYData[plr.Name].data > 50 then table.remove(playerYData[plr.Name].data, 1) end
+        end
+    end
+    -- Update chart
+    local chartData = {
+        type = "line",
+        data = {
+            datasets = {}
+        },
+        options = {
+            responsive = true,
+            scales = {
+                x = { title: { display: true, text: "Time (s)" } },
+                y = { title: { display: true, text: "Y-Position" } }
+            }
+        }
+    }
+    for name, data in pairs(playerYData) do
+        table.insert(chartData.data.datasets, {
+            label = name,
+            data = data.data,
+            borderColor = string.format("#%06x", math.random(0, 0xFFFFFF)),
+            backgroundColor = "rgba(0, 0, 0, 0)",
+            fill = false
+        })
+    end
+    canvas.updateChart("playerYChart", chartData)
+end)
+
+-- Initial chart setup
+canvas.addChart("playerYChart", {
+    type = "line",
+    data = {
+        datasets = {}
+    },
+    options = {
+        responsive = true,
+        scales = {
+            x = { title: { display: true, text: "Time (s)" } },
+            y = { title: { display: true, text: "Y-Position" } }
+        }
+    }
+})
+
+-- Executable Code Block
+canvas.addCodeBlock("playerRefresh", [[
+    -- Refresh Player List
+    refreshPlayerList()
+    print("Player list refreshed via canvas")
+]], function()
+    refreshPlayerList()
+    print("Player list refreshed via canvas")
+end)
