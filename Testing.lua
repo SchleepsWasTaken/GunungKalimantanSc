@@ -1,6 +1,6 @@
--- 🐄 CowHub | Gunung Kalimantan — Checkpoints + Movement (with editable Auto-TP timer)
--- Features kept: Checkpoints (stream-safe, dedupe, saved), Movement (WalkSpeed/Fly/Noclip)
--- Players tab removed. Auto Teleport gets a slider: 0s..600s (0 treated as 1s to avoid spam).
+-- 🐄 CowHub | Gunung Kalimantan — Checkpoints + Movement (with looping Auto-TP)
+-- Features: Checkpoints (stream-safe, dedupe, saved), Movement (WalkSpeed/Fly/Noclip)
+-- Players tab removed. Auto Teleport loops: closest CP -> summit -> lobby -> reset timer -> repeat.
 
 -- Load Rayfield
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
@@ -13,7 +13,7 @@ local Window = Rayfield:CreateWindow({
     KeySystem = false
 })
 
--- Services & player refs
+-- Services & refs
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local HttpService = game:GetService("HttpService")
@@ -23,10 +23,12 @@ local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 local Humanoid = Character:WaitForChild("Humanoid")
-LocalPlayer.CharacterAdded:Connect(function(ch)
+
+local function rebindCharacter(ch)
     Character = ch
     Humanoid = ch:WaitForChild("Humanoid")
-end)
+end
+LocalPlayer.CharacterAdded:Connect(rebindCharacter)
 
 local function notify(msg, dur)
     pcall(function()
@@ -55,47 +57,63 @@ local DEDUPE_TOL = 3 -- studs for dedupe
 -- Storage
 local checkpoints_map = {}   -- key -> {name=string, pos=Vector3}
 local checkpoint_buttons = {} -- Rayfield buttons
-local saved_list = {}        -- array-writable for persistence (table of {name, pos={X,Y,Z}})
+local saved_list = {}        -- { {name=, pos={X,Y,Z}}, ... }
 
--- Filesystem helpers
+-- fs guards (executor-only)
 local HAS_FS = (typeof(isfile) == "function") and (typeof(writefile) == "function") and (typeof(makefolder) == "function")
-if HAS_FS then pcall(function() if not isfolder(SAVE_FOLDER) then makefolder(SAVE_FOLDER) end end) end
+if HAS_FS then
+    pcall(function()
+        if not isfolder(SAVE_FOLDER) then makefolder(SAVE_FOLDER) end
+    end)
+end
 
 local function save_to_file()
-    if HAS_FS then pcall(function() writefile(SAVE_FILE, HttpService:JSONEncode(saved_list)) end) end
+    if not HAS_FS then return end
+    pcall(function()
+        writefile(SAVE_FILE, HttpService:JSONEncode(saved_list))
+    end)
 end
 
 local function load_from_file()
-    if HAS_FS then
-        local ok, data = pcall(readfile, SAVE_FILE)
-        if ok and data then
-            local succ, dec = pcall(function() return HttpService:JSONDecode(data) end)
-            if succ and type(dec) == "table" then saved_list = dec end
+    if not HAS_FS then return end
+    local ok, data = pcall(function() return readfile(SAVE_FILE) end)
+    if ok and data then
+        local succ, dec = pcall(function() return HttpService:JSONDecode(data) end)
+        if succ and typeof(dec) == "table" then
+            saved_list = dec
         end
     end
 end
 
 local function vecFromTable(t)
     if typeof(t) == "Vector3" then return t end
-    return Vector3.new(t.X or 0, t.Y or 0, t.Z or 0)
+    if typeof(t) == "table" then
+        return Vector3.new(tonumber(t.X) or 0, tonumber(t.Y) or 0, tonumber(t.Z) or 0)
+    end
+    return Vector3.new()
 end
 
 local function makeKey(pos)
-    return math.floor(pos.X / DEDUPE_TOL) .. "_" .. math.floor(pos.Y / DEDUPE_TOL) .. "_" .. math.floor(pos.Z / DEDUPE_TOL)
+    return string.format("%d_%d_%d",
+        math.floor(pos.X / DEDUPE_TOL),
+        math.floor(pos.Y / DEDUPE_TOL),
+        math.floor(pos.Z / DEDUPE_TOL)
+    )
 end
 
--- Safe teleport (raycast down to find ground)
+-- Safer ground-snap teleport
 local function safeTeleport(pos)
     local hrp = safeHRP()
     if not hrp then return end
 
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Blacklist
+    params.FilterDescendantsInstances = { Character }
+
     local function snap(origin, length)
-        local params = RaycastParams.new()
-        params.FilterDescendantsInstances = { Character }
-        params.FilterType = Enum.RaycastFilterType.Blacklist
-        local res = workspace:Raycast(origin, Vector3.new(0, -length, 0), params)
-        if res and res.Position then
-            hrp.CFrame = CFrame.new(res.Position + Vector3.new(0, 4, 0))
+        local r = Workspace:Raycast(origin, Vector3.new(0, -length, 0), params)
+        if r and r.Position then
+            hrp.CFrame = CFrame.new(r.Position + Vector3.new(0, 4, 0))
             hrp.Velocity = Vector3.new()
             return true
         end
@@ -137,7 +155,47 @@ local function getSortedCheckpoints()
     return arr
 end
 
+-- Candidate detection
+local function isCandidate(obj)
+    local name = (obj.Name or ""):lower()
+    if name:find("medkit") or name:find("kotak") or name:find("aqua") then return false end
+    if name:find("checkpoint") then return true end
+    for _, d in ipairs(obj:GetDescendants()) do
+        if d:IsA("BillboardGui") or d:IsA("SurfaceGui") then
+            for _, g in ipairs(d:GetDescendants()) do
+                if (g:IsA("TextLabel") or g:IsA("TextButton") or g:IsA("TextBox")) and type(g.Text) == "string" then
+                    if string.match(string.lower(g.Text), "check ?point") then return true end
+                end
+            end
+        end
+    end
+    return false
+end
+
+local function getPosFrom(obj)
+    if obj:IsA("BasePart") then return obj.Position end
+    if obj:IsA("Model") then
+        if obj.PrimaryPart then return obj.PrimaryPart.Position end
+        local found = obj:FindFirstChildWhichIsA("BasePart", true)
+        if found then return found.Position end
+    end
+    return nil
+end
+
+-- Load saved checkpoints
+load_from_file()
+for _, s in ipairs(saved_list) do
+    if s and s.pos then
+        local p = vecFromTable(s.pos)
+        local key = makeKey(p)
+        if not checkpoints_map[key] then
+            checkpoints_map[key] = { name = s.name or "SavedCP", pos = p }
+        end
+    end
+end
+
 -- UI rebuild (debounced)
+local checkpoint_buttons = {}
 local ui_debounce = false
 local function rebuildCheckpointUI()
     if ui_debounce then return end
@@ -177,45 +235,6 @@ local function rebuildCheckpointUI()
         pcall(function() CheckpointTab:CreateLabel("Found " .. tostring(#arr) .. " checkpoints") end)
         ui_debounce = false
     end)
-end
-
--- Candidate detection
-local function isCandidate(obj)
-    local name = (obj.Name or ""):lower()
-    if name:find("medkit") or name:find("kotak") or name:find("aqua") then return false end
-    if name:find("checkpoint") then return true end
-    for _, d in ipairs(obj:GetDescendants()) do
-        if d:IsA("BillboardGui") or d:IsA("SurfaceGui") then
-            for _, g in ipairs(d:GetDescendants()) do
-                if (g:IsA("TextLabel") or g:IsA("TextButton") or g:IsA("TextBox")) and type(g.Text) == "string" then
-                    if string.match(string.lower(g.Text), "check ?point") then return true end
-                end
-            end
-        end
-    end
-    return false
-end
-
-local function getPosFrom(obj)
-    if obj:IsA("BasePart") then return obj.Position end
-    if obj:IsA("Model") then
-        if obj.PrimaryPart then return obj.PrimaryPart.Position end
-        local found = obj:FindFirstChildWhichIsA("BasePart", true)
-        if found then return found.Position end
-    end
-    return nil
-end
-
--- Load saved checkpoints
-load_from_file()
-for _, s in ipairs(saved_list) do
-    if s and s.pos then
-        local p = vecFromTable(s.pos)
-        local key = makeKey(p)
-        if not checkpoints_map[key] then
-            checkpoints_map[key] = { name = s.name or "SavedCP", pos = p }
-        end
-    end
 end
 rebuildCheckpointUI()
 
@@ -271,7 +290,7 @@ Workspace.DescendantAdded:Connect(function(obj)
     end
 end)
 
--- Checkpoint utilities
+-- Utilities
 CheckpointTab:CreateButton({
     Name = "Re-scan Visible Workspace",
     Callback = function()
@@ -302,15 +321,70 @@ CheckpointTab:CreateButton({
         checkpoints_map = {}
         saved_list = {}
         if HAS_FS and typeof(isfile) == "function" and typeof(delfile) == "function" then
-            pcall(function() if isfile(SAVE_FILE) then delfile(SAVE_FILE) end end)
+            pcall(function()
+                if isfile(SAVE_FILE) then delfile(SAVE_FILE) end
+            end)
         end
         rebuildCheckpointUI()
         notify("Cleared saved checkpoints", 2)
     end
 })
 
+-- ===== Helpers for Auto-TP =====
+local function getHRP()
+    if Character and Character:FindFirstChild("HumanoidRootPart") then
+        return Character.HumanoidRootPart
+    end
+    return nil
+end
+
+local function getClosestCheckpoint(pos)
+    local best, bestDist
+    for _, cp in pairs(checkpoints_map) do
+        local d = (cp.pos - pos).Magnitude
+        if not bestDist or d < bestDist then
+            bestDist = d
+            best = cp
+        end
+    end
+    return best
+end
+
+local function getSummitAndBase()
+    local arr = {}
+    for _, v in pairs(checkpoints_map) do table.insert(arr, v) end
+    table.sort(arr, function(a, b) return a.pos.Y < b.pos.Y end)
+    return arr[#arr], arr[1], arr  -- summit, base, sorted list
+end
+
 -- ============================
--- Auto Teleport (with editable timer)
+-- Main Lobby controls (under Checkpoints tab)
+-- ============================
+local lobbyPos = nil  -- session-only; fallback to lowest checkpoint
+
+CheckpointTab:CreateButton({
+    Name = "Set Current Position as Main Lobby",
+    Callback = function()
+        local hrp = getHRP()
+        if not hrp then
+            notify("Your character is not loaded", 3)
+            return
+        end
+        lobbyPos = hrp.Position
+        notify("Main Lobby set to your current position", 2)
+    end
+})
+
+CheckpointTab:CreateButton({
+    Name = "Clear Main Lobby (fallback to lowest CP)",
+    Callback = function()
+        lobbyPos = nil
+        notify("Main Lobby cleared (will use lowest checkpoint)", 2)
+    end
+})
+
+-- ============================
+-- Auto Teleport (LOOP + custom sequence)
 -- ============================
 local function formatTime(s)
     s = math.max(0, math.floor(s))
@@ -329,14 +403,10 @@ local function setLabel(lbl, txt)
 end
 
 local autoActive = false
-local isPerforming = false
-local autoConn
+local autoThread
+local timerMax = 300 -- default 5m
 
--- Timer state
-local timerMax = 300 -- default 5 minutes
-local timer = timerMax
-
--- Interval slider (0..600s; 0 -> treated as 1s internally to avoid spam)
+-- Interval slider (0..600s; 0 behaves as 1s internally)
 CheckpointTab:CreateSlider({
     Name = "Auto TP Interval (0s - 10m)",
     Range = {0, 600},
@@ -344,54 +414,85 @@ CheckpointTab:CreateSlider({
     CurrentValue = timerMax,
     Callback = function(v)
         timerMax = tonumber(v) or 0
-        -- Avoid CPU spike: treat 0 as 1s internally
         if not autoActive then
             setLabel(countdownLabel, "Interval set to: " .. formatTime(math.max(1, timerMax)))
         end
-        timer = math.max(1, timerMax)
     end
 })
 
 local function performAutoTeleport()
-    local arr = getSortedCheckpoints()
-    if #arr < 2 then
-        notify("Not enough checkpoints (need at least 2)", 3)
+    local summit, base, arr = getSummitAndBase()
+    if not arr or #arr == 0 then
+        notify("No checkpoints found yet.", 3)
         return
     end
 
-    local bottom = arr[1].pos
-    local summit = arr[#arr].pos + Vector3.new(0, 30, 0) -- extra Y to avoid clipping
+    local hrp = getHRP()
+    if not hrp then
+        notify("Your character is not loaded", 3)
+        return
+    end
 
-    -- Simulate climb then return
-    safeSummitTeleport(summit)
-    task.wait(5)
-    safeTeleport(bottom)
-    notify("Back to bottom, timer reset", 2)
+    -- 1) Closest checkpoint
+    local closest = getClosestCheckpoint(hrp.Position)
+    if closest then
+        safeTeleport(closest.pos)
+        task.wait(1.0)
+    end
+
+    -- 2) Summit (highest CP) with safe climb
+    if summit then
+        local summitTarget = summit.pos + Vector3.new(0, 30, 0)
+        safeSummitTeleport(summitTarget)
+        task.wait(2.0)
+    end
+
+    -- 3) Main Lobby (custom if set, else lowest CP)
+    local lobbyTarget = lobbyPos
+    if not lobbyTarget then
+        if base then
+            lobbyTarget = base.pos
+        else
+            lobbyTarget = hrp.Position
+        end
+    end
+    safeTeleport(lobbyTarget)
+    task.wait(1.0)
+
+    notify("Cycle complete. Timer reset.", 2)
+end
+
+local function startAutoLoop()
+    if autoThread then return end
+    autoThread = task.spawn(function()
+        local interval = math.max(1, timerMax)
+        local deadline = time() + interval
+        while autoActive do
+            local remaining = deadline - time()
+            if remaining <= 0 then
+                performAutoTeleport()
+                interval = math.max(1, timerMax) -- pick up any slider changes dynamically
+                deadline = time() + interval
+            else
+                setLabel(countdownLabel, "Time until next TP: " .. formatTime(remaining))
+                task.wait(0.2)
+            end
+        end
+        setLabel(countdownLabel, "Auto Teleport Off")
+        autoThread = nil
+    end)
 end
 
 CheckpointTab:CreateToggle({
-    Name = "Auto Teleport",
+    Name = "Auto Teleport (Loop)",
     CurrentValue = false,
     Callback = function(val)
         autoActive = val
         if val then
-            timer = math.max(1, timerMax)
-            setLabel(countdownLabel, "Time until next TP: " .. formatTime(timer))
-            autoConn = RunService.Heartbeat:Connect(function(dt)
-                if not autoActive or isPerforming then return end
-                timer = timer - dt
-                if timer <= 0 then
-                    isPerforming = true
-                    performAutoTeleport()
-                    timer = math.max(1, timerMax)
-                    isPerforming = false
-                end
-                setLabel(countdownLabel, "Time until next TP: " .. formatTime(timer))
-            end)
+            setLabel(countdownLabel, "Time until next TP: " .. formatTime(math.max(1, timerMax)))
+            startAutoLoop()
         else
-            if autoConn then autoConn:Disconnect() autoConn = nil end
-            timer = math.max(1, timerMax)
-            setLabel(countdownLabel, "Auto Teleport Off")
+            -- loop will exit gracefully
         end
     end
 })
